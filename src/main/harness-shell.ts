@@ -224,6 +224,14 @@ export class HarnessShell {
       const headers = new Headers(request.headers)
       for (const name of ['host', 'origin', 'cookie', 'sec-fetch-site']) headers.delete(name)
       headers.set('cookie', backend.cookie)
+      // Browsers send a same-origin Origin on every non-GET request, and backend routes that guard writes
+      // against cross-site calls (plugin settings, the market installer) reject a POST without one. Node's
+      // fetch adds none, so supply it here, as authorizeWebSocket does for sockets. The value is the owned
+      // backend's origin, never anything the page sent.
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        headers.set('origin', backend.origin)
+        headers.set('sec-fetch-site', 'same-origin')
+      }
       const init: RequestInit & { duplex?: 'half' } = {
         method: request.method, headers, redirect: 'manual', signal: operation.signal
       }

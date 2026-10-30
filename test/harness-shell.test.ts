@@ -138,9 +138,19 @@ describe('packaged Harness shell', () => {
     expect(payload.body).toBe('payload')
     expect(payload.headers.cookie).toBe('session=owned')
     expect(payload.headers.host).toBe(new URL(origin).host)
-    expect(payload.headers.origin).toBeUndefined()
-    expect(payload.headers['sec-fetch-site']).toBeUndefined()
+    // The page's own origin and fetch-site claims never reach the backend. A write carries the owned
+    // backend's origin instead, so routes that require a same-origin POST accept it.
+    expect(payload.headers.origin).toBe(origin)
+    expect(payload.headers['sec-fetch-site']).toBe('same-origin')
     expect(payload.headers['x-custom']).toBe('kept')
+    // Reads keep forwarding neither header, like a browser's same-origin GET.
+    const read = await (await shell.handle(request('api/echo', { headers: { origin: 'dsh-desktop://harness', 'sec-fetch-site': 'cross-site' } }))).json()
+    expect(read.headers.origin).toBeUndefined()
+    expect(read.headers['sec-fetch-site']).toBeUndefined()
+    // An end-to-end POST without any page-supplied origin still gets the backend origin.
+    const bare = await (await shell.handle(request('api/echo', { method: 'POST', body: '{}' }))).json()
+    expect(bare.headers.origin).toBe(origin)
+    expect(bare.headers['sec-fetch-site']).toBe('same-origin')
     for (const header of ['set-cookie', 'content-length', 'transfer-encoding', 'connection', 'keep-alive']) expect(response.headers.has(header)).toBe(false)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect((await shell.handle(request('api/echo', { headers: { origin: 'null' } }))).status).toBe(403)
