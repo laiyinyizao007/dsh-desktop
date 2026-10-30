@@ -131,7 +131,7 @@ export async function prepareOfficeRuntime({ target = officeTarget(), output = j
     await stripUnusedPythonPayload(dependencies, pythonLib, sitePackages)
     const manifest = {
       desktopVersion: version,
-      platform: windows ? 'win32' : 'darwin',
+      platform: target.startsWith('win-') ? 'win32' : target.startsWith('mac-') ? 'darwin' : 'linux',
       arch: target.endsWith('arm64') ? 'arm64' : 'x64',
       payloadDigest: createHash('sha256').update(JSON.stringify({ format: 1, target, artifact, python: lock.pythonVersion, release: lock.pythonRelease, wheels: lock.wheels, packages: lock.pythonPackages })).digest('hex'),
       python: lock.pythonVersion,

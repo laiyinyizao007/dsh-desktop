@@ -1,0 +1,35 @@
+[Unit]
+Description=DSH Desktop web (DeepSeek Harness browser UI)
+Documentation=https://github.com/dataelement/dsh-desktop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dsh-desktop
+Environment=DSH_HOME=%h/.dsh
+Environment=NODE_ENV=production
+Environment=SHELL=/bin/sh
+# The Harness's outbound traffic goes through the local proxy when one runs.
+Environment=HTTPS_PROXY=http://127.0.0.1:7890
+Environment=HTTP_PROXY=http://127.0.0.1:7890
+Environment=http_proxy=http://127.0.0.1:7890
+Environment=https_proxy=http://127.0.0.1:7890
+# Node's fetch (undici) ignores the proxy variables above, so preload a
+# dispatcher instead. Drop this line when no proxy is needed.
+Environment=NODE_OPTIONS=--import=%h/dsh-desktop/scripts/proxy-fetch-setup.mjs
+# --host must be one concrete interface address: the Harness rejects
+# wildcards. Use the LAN address so other devices on the network can reach
+# it, or 127.0.0.1 for loopback-only access.
+# --trusted-host lists every authority the browser may reach; the browser-trust
+# fence rejects any /api request whose Host is not on this list.
+ExecStart=/usr/bin/node %h/dsh-desktop/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host 127.0.0.1 --port 43129 --trusted-host 127.0.0.1:43129
+Restart=on-failure
+RestartSec=5
+# The launch token changes on every restart, and the mobile bridge reads it
+# from this file. Append mode keeps every run's URL line available.
+StandardOutput=append:/var/log/dsh-web.log
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

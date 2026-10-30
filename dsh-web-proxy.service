@@ -1,0 +1,27 @@
+[Unit]
+Description=Reverse proxy for the DSH Harness web UI (injects the live launch token)
+Documentation=https://github.com/dataelement/dsh-desktop
+# Deliberately not `Requires=dsh-web.service`: the proxy reads the Harness's
+# launch token from the log on every request, so it survives a Harness
+# restart on its own. Tying it with `Requires` would stop and restart the
+# proxy whenever the Harness restarts, which drops live WebSocket clients
+# and leaves the public URL answering 502 in the gap.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dsh-desktop
+Environment=DSH_HOME=%h/.dsh
+Environment=SHELL=/bin/sh
+# The upstream Harness address. It must match the --host the Harness binds.
+Environment=DSH_UPSTREAM=http://127.0.0.1:43129
+Environment=DSH_HARNESS_LOG=/var/log/dsh-web.log
+ExecStart=/usr/bin/node %h/dsh-desktop/scripts/dsh-web-proxy.mjs --port 43128
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

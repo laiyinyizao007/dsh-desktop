@@ -108,6 +108,16 @@ export interface LanMobileBridgeOptions {
   onReconnectRequested?: () => void
   onConnectedChange?: (connected: boolean) => void
   pairingPinStore?: PairingPinStore
+  /**
+   * Persistent store for paired phones.
+   *
+   * Upstream keeps the paired sessions in memory only, so every bridge
+   * restart drops them and each phone has to enter the PIN again. On a
+   * headless host the bridge restarts on every harness restart, which would
+   * make the phone re-pair constantly. A store keeps the paired tokens
+   * across restarts.
+   */
+  sessionStore?: SessionStore
 }
 
 export interface LanMobileBridgeSnapshot {
@@ -122,6 +132,23 @@ export interface LanMobileBridgeSnapshot {
   tunnelUrl?: string
   tunnelProvider?: InternetTunnelProvider
   tunnelError?: string
+}
+
+/** One paired phone. The token is what the phone's cookie carries. */
+export interface PairedSession {
+  token: string
+  remoteAddress: string
+}
+
+/**
+ * Persistent store for paired phones.
+ *
+ * Implementations must keep the tokens secret: the token in the phone's
+ * cookie is the only proof it has of being paired.
+ */
+export interface SessionStore {
+  load(): PairedSession[]
+  save(sessions: PairedSession[]): boolean
 }
 
 interface MobileSession {
@@ -235,8 +262,40 @@ export class LanMobileBridge {
       this.server?.listen(this.options.port ?? 0, '0.0.0.0', resolve)
     })
     this.port = (this.server.address() as AddressInfo).port
+    this.restoreSessions()
     this.syncConnected()
     return this.snapshot()
+  }
+
+  /**
+   * Reload the paired phones from the persistent store.
+   *
+   * The in-memory map is the authority while the bridge runs; the store only
+   * seeds it at startup, so a paired phone stays paired across a restart
+   * instead of having to enter the PIN again.
+   */
+  private restoreSessions(): void {
+    const store = this.options.sessionStore
+    if (!store) return
+    for (const session of store.load()) {
+      if (!session.token || this.sessions.has(session.token)) continue
+      this.sessions.set(session.token, { token: session.token, remoteAddress: session.remoteAddress })
+    }
+  }
+
+  /**
+   * Write the paired phones back to the persistent store.
+   *
+   * Called whenever the session set changes. The store holds the phone's
+   * proof of being paired, so it is written with owner-only permissions.
+   */
+  private persistSessions(): void {
+    const store = this.options.sessionStore
+    if (!store) return
+    store.save([...this.sessions.values()].map((session) => ({
+      token: session.token,
+      remoteAddress: session.remoteAddress
+    })))
   }
 
   async stop(): Promise<void> {
@@ -559,6 +618,7 @@ export class LanMobileBridge {
     this.sessions.clear()
     this.suspendedSessions.clear()
     this.resumableSessions.clear()
+    this.persistSessions()
     this.rotatePairingToken()
     this.clearPinFailures()
     this.syncConnected()
@@ -588,6 +648,7 @@ export class LanMobileBridge {
       }
     }
     this.sessions.set(token, { token, remoteAddress })
+    this.persistSessions()
     this.pairingToken = undefined
     this.pairingExpiresAt = undefined
     const secure = connectionMode === 'tunnel' ? '; Secure' : ''

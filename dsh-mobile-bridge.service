@@ -1,0 +1,27 @@
+[Unit]
+Description=DSH Desktop LAN mobile bridge (PIN-paired phone access)
+Documentation=https://github.com/dataelement/dsh-desktop
+After=network-online.target dsh-web.service
+Wants=network-online.target
+Requires=dsh-web.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dsh-desktop
+Environment=DSH_HOME=%h/.dsh
+Environment=SHELL=/bin/sh
+# The bridge talks to the Harness over the LAN address, not through the proxy.
+Environment=NO_PROXY=127.0.0.1,localhost,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12,100.64.0.0/10
+Environment=no_proxy=127.0.0.1,localhost,10.0.0.0/8,192.168.0.0/16,172.16.0.0/12,100.64.0.0/10
+Environment=DSH_HARNESS_LOG=/var/log/dsh-web.log
+# --public-url is the fixed public address in front of this bridge; the
+# pairing URL is published under it so the hostname does not change when the
+# bridge restarts. Drop it to use the bridge's own LAN address.
+ExecStart=/usr/bin/node %h/dsh-desktop/scripts/standalone-mobile-bridge.mjs
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
