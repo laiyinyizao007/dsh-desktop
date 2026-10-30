@@ -1,0 +1,34 @@
+{
+  "name": "dsh-desktop-responsive",
+  "version": "0.1.0",
+  "description": "DSH Desktop narrow-viewport layout for the Harness Web UI: sidebar drawer and compact spacing, scoped to stable layout markers.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-api-session-controller"
+      ],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-locale": "^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.2.1-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.2.1-rc.1",
+    "react": "^18.2.0"
+  }
+}

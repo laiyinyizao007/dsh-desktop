@@ -31,6 +31,12 @@
     - id: dsh-desktop-client-ui
       name: dsh-desktop-client-ui
 
+    # Narrow-viewport layout (sidebar drawer). Styles only the data-dsh-region
+    # markers added by the layout/conversation patches; removing this row
+    # restores the stock layout.
+    - id: dsh-desktop-responsive
+      name: dsh-desktop-responsive
+
     - id: dsh-desktop-workbenches
       name: dsh-desktop-workbenches
       config:
