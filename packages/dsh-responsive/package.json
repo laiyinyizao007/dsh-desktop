@@ -1,0 +1,22 @@
+{
+  "name": "dsh-responsive",
+  "version": "0.1.0",
+  "description": "Phone-width layout for the Harness web UI: the expanded sidebar floats over the content instead of squeezing it.",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "license": "MIT"
+}

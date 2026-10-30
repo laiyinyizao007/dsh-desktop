@@ -1,0 +1,20 @@
+diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
+index a5096f4..fbb6195 100644
+--- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
+@@ -321,6 +321,7 @@ window.__ModuleLoader__.load({
+ 					gridTemplateColumns: `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`
+ 				},
+ 				"data-sidebar-collapsed": sidebarCollapsed || void 0,
++					"data-dsh-region": "layout",
+ 				"data-rightbar-collapsed": cols.rightbar === 0 || void 0,
+ 				"data-rightbar-fullscreen": layoutInfo.rightbarFullscreen || void 0,
+ 				"data-rightbar-instant": layoutInfo.rightbarInstant || void 0,
+@@ -334,6 +335,7 @@ window.__ModuleLoader__.load({
+ 					}),
+ 					(0, react_jsx_runtime.jsx)("div", {
+ 						className: AppFrame_module_css_default.sidebarCol,
++						"data-dsh-region": "sidebar",
+ 						children: sidebar
+ 					}),
+ 					(0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(CenterColumn, { children: main }), (0, react_jsx_runtime.jsx)(RightbarColumn, { children: renderSlot("rightbar", {
