@@ -66,6 +66,18 @@ it('keeps the Word worker off the Windows confinement command line', () => {
   expect(docxWorkerPython('runtime', 'win32')).toBe(join('runtime', 'primary-runtime/dependencies/python', 'pythonw.exe'))
   expect(docxWorkerPython('runtime', 'darwin')).toBe(join('runtime', 'primary-runtime/dependencies/python', 'bin/python3'))
 })
+it('keeps TEMP and TMP for the Windows ACL runner but no other ambient variables', () => {
+  // Without them GetTempPathW falls back to C:\Windows, where the runner's lock directory cannot be created by a standard user.
+  const win = { env: { SystemRoot: 'C:\\Windows', TEMP: 'C:\\Users\\u\\Temp', TMP: 'C:\\Users\\u\\Temp', USERPROFILE: 'C:\\Users\\u', API_KEY: 'x' }, platform: 'win32', versions: {} }
+  const env = docxWorkerEnvironment(win)
+  expect(env.TEMP).toBe('C:\\Users\\u\\Temp')
+  expect(env.TMP).toBe('C:\\Users\\u\\Temp')
+  expect(env.USERPROFILE).toBeUndefined()
+  expect(env.API_KEY).toBeUndefined()
+  const posix = docxWorkerEnvironment({ env: { SystemRoot: 'x', TEMP: '/tmp', TMP: '/tmp', HOME: '/h' }, platform: 'linux', versions: {} })
+  expect(posix.TEMP).toBeUndefined()
+  expect(posix.TMP).toBeUndefined()
+})
 it('returns Chinese layout JSON when the Windows code page is charmap', async () => {
   const { spawn } = await import('node:child_process')
   const python = resolve('.build/office-runtime/primary-runtime/dependencies/python', process.platform === 'win32' ? 'python.exe' : 'bin/python3')
