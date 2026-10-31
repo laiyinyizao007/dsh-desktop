@@ -1,8 +1,16 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
-index a5096f4..fbb6195 100644
+index a5096f4..0b4061b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js
-@@ -321,6 +321,7 @@ window.__ModuleLoader__.load({
+@@ -111,6 +111,7 @@ window.__ModuleLoader__.load({
+ 		function CenterColumn(props) {
+ 			return (0, react_jsx_runtime.jsx)("div", {
+ 				className: AppFrame_module_css_default.centerCol,
++				"data-dsh-region": "center",
+ 				children: props.children
+ 			});
+ 		}
+@@ -321,6 +322,7 @@ window.__ModuleLoader__.load({
  					gridTemplateColumns: `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`
  				},
  				"data-sidebar-collapsed": sidebarCollapsed || void 0,
@@ -10,7 +18,7 @@ index a5096f4..fbb6195 100644
  				"data-rightbar-collapsed": cols.rightbar === 0 || void 0,
  				"data-rightbar-fullscreen": layoutInfo.rightbarFullscreen || void 0,
  				"data-rightbar-instant": layoutInfo.rightbarInstant || void 0,
-@@ -334,6 +335,7 @@ window.__ModuleLoader__.load({
+@@ -334,6 +336,7 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsx)("div", {
  						className: AppFrame_module_css_default.sidebarCol,

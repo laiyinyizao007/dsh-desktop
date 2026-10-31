@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index a557fe74fd..d5434c0770 100644
+index a557fe7..6a6c81a 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -17383,13 +17383,14 @@ window.__ModuleLoader__.load({
@@ -27,7 +27,15 @@ index a557fe74fd..d5434c0770 100644
  			"heroWorkspaceRow": "wSkVaW_heroWorkspaceRow",
  			"root": "wSkVaW_root",
  			"scrollBody": "wSkVaW_scrollBody",
-@@ -17880,12 +17882,17 @@ window.__ModuleLoader__.load({
+@@ -17851,6 +17853,7 @@ window.__ModuleLoader__.load({
+ 			const chipTitle = storedChipTitle === void 0 ? void 0 : workspaceDisplayTitle(storedChipTitle, t("workspace.defaultName"));
+ 			const heroWorkspaceRow = (0, react_jsx_runtime.jsxs)("div", {
+ 				className: ConversationRoot_module_css_default.heroWorkspaceRow,
++				"data-dsh-region": "conversation-workspace-row",
+ 				children: [
+ 					(0, react_jsx_runtime.jsx)(WorkspaceChip, {
+ 						buttonRef: pickerAnchor,
+@@ -17880,12 +17883,17 @@ window.__ModuleLoader__.load({
  					sessionId === void 0 ? null : (0, react_jsx_runtime.jsx)("div", {
  						className: ConversationRoot_module_css_default.heroOptions,
  						children: renderSlot("conversation.hero.options", {})
@@ -45,7 +53,7 @@ index a557fe74fd..d5434c0770 100644
  				...inert ? {
  					disabled: true,
  					placeholder: t("placeholder.workspace"),
-@@ -17907,7 +17914,8 @@ window.__ModuleLoader__.load({
+@@ -17907,7 +17915,8 @@ window.__ModuleLoader__.load({
  					}),
  					hero && heroWorkspaceRow,
  					zone !== void 0 && renderSlot("conversation.input.dock", zone),
@@ -55,7 +63,7 @@ index a557fe74fd..d5434c0770 100644
  				]
  			});
  			const composer = renderSlotChain("conversation.composer", {
-@@ -17951,7 +17959,8 @@ window.__ModuleLoader__.load({
+@@ -17951,7 +17960,8 @@ window.__ModuleLoader__.load({
  		* @returns the Conversation subtree.
  		*/
  		function ConversationPanel({ renderSlot }) {
@@ -65,7 +73,7 @@ index a557fe74fd..d5434c0770 100644
  		}
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationHeader.js
-@@ -18883,13 +18892,16 @@ window.__ModuleLoader__.load({
+@@ -18883,13 +18893,16 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
@@ -84,7 +92,7 @@ index a557fe74fd..d5434c0770 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -18911,6 +18923,7 @@ window.__ModuleLoader__.load({
+@@ -18911,6 +18924,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -92,7 +100,7 @@ index a557fe74fd..d5434c0770 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -18937,7 +18950,7 @@ window.__ModuleLoader__.load({
+@@ -18937,7 +18951,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -101,7 +109,7 @@ index a557fe74fd..d5434c0770 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -19182,10 +19195,6 @@ window.__ModuleLoader__.load({
+@@ -19182,10 +19196,6 @@ window.__ModuleLoader__.load({
  								"data-composer-overlay": true,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -112,7 +120,7 @@ index a557fe74fd..d5434c0770 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -19197,25 +19206,35 @@ window.__ModuleLoader__.load({
+@@ -19197,25 +19207,35 @@ window.__ModuleLoader__.load({
  								onRetryFile: (id) => {
  									retryFileUpload?.(id);
  								},
@@ -162,7 +170,7 @@ index a557fe74fd..d5434c0770 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
-@@ -19343,8 +19362,7 @@ window.__ModuleLoader__.load({
+@@ -19343,8 +19363,7 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsxs)("div", {
  						className: InputBar_module_css_default.dock,
@@ -172,7 +180,7 @@ index a557fe74fd..d5434c0770 100644
  							useProjection,
  							t
  						})]
-@@ -19954,6 +19972,14 @@ window.__ModuleLoader__.load({
+@@ -19954,6 +19973,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.options": {
  						kind: "list",
  						scope: "session"
@@ -187,7 +195,7 @@ index a557fe74fd..d5434c0770 100644
  					}
  				},
  				slots: {
-@@ -20086,6 +20112,10 @@ window.__ModuleLoader__.load({
+@@ -20086,6 +20113,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -198,7 +206,7 @@ index a557fe74fd..d5434c0770 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -20122,6 +20152,7 @@ window.__ModuleLoader__.load({
+@@ -20122,6 +20153,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -206,7 +214,7 @@ index a557fe74fd..d5434c0770 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -20188,6 +20219,11 @@ window.__ModuleLoader__.load({
+@@ -20188,6 +20220,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -218,7 +226,7 @@ index a557fe74fd..d5434c0770 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -20220,10 +20256,7 @@ window.__ModuleLoader__.load({
+@@ -20220,10 +20257,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",
@@ -231,7 +239,7 @@ index a557fe74fd..d5434c0770 100644
  				yield registerConversationRoot();
  				yield registerConversationContent();
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
-index 0646133402..a9450e7f23 100644
+index 0646133..a9450e7 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/contract/slots.d.ts
 @@ -194,6 +194,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -306,7 +314,7 @@ index 0646133402..a9450e7f23 100644
  export interface ComposerChainProps {
      /** Current Session identity used by temporary business-owned entries. */
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
-index 046ea88c62..1b46f8d619 100644
+index 046ea88..1b46f8d 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/types/client/skeleton/ConversationPanel.d.ts
 @@ -5,5 +5,5 @@ import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-
@@ -314,7 +322,5 @@ index 046ea88c62..1b46f8d619 100644
   * @returns the Conversation subtree.
   */
 -export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation'>): import("react").ReactNode;
--//# sourceMappingURL=ConversationPanel.d.ts.map
-\ No newline at end of file
 +export declare function ConversationPanel({ renderSlot }: PropsRuntime<'main'> & PropsRenderSlots<'main.conversation' | 'desktop.workbench.frame'>): import("react").ReactNode;
-+//# sourceMappingURL=ConversationPanel.d.ts.map
+ //# sourceMappingURL=ConversationPanel.d.ts.map
