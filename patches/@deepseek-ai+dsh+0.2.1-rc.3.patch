@@ -18,7 +18,7 @@ diff --git a/node_modules/@deepseek-ai/dsh/package.json b/node_modules/@deepseek
 index a9b4aea6db..d76548a1ca 100644
 --- a/node_modules/@deepseek-ai/dsh/package.json
 +++ b/node_modules/@deepseek-ai/dsh/package.json
-@@ -105,7 +105,19 @@
+@@ -105,7 +105,20 @@
      "@deepseek-ai/dsh-experimental-terminal-bundle": "0.2.1-rc.3",
      "@deepseek-ai/dsh-experimental-session-search": "0.2.1-rc.3",
      "@deepseek-ai/dsh-experimental-tool-worktree": "0.2.1-rc.3",
@@ -35,7 +35,8 @@ index a9b4aea6db..d76548a1ca 100644
 +    "react-dom": "18.3.1",
 +    "dsh-desktop-onboarding": "0.1.0",
 +    "dsh-desktop-workbenches": "0.1.0",
-+    "dsh-desktop-office": "0.1.0"
++    "dsh-desktop-office": "0.1.0",
++    "dsh-desktop-responsive": "0.1.0"
    },
    "devDependencies": {
      "@deepseek-ai/dsh-skill-badge": "0.2.1-rc.3",

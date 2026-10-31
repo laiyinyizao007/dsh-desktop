@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
-index a557fe7..6a6c81a 100644
+index a557fe7..2fee99b 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js
 @@ -17383,13 +17383,14 @@ window.__ModuleLoader__.load({
@@ -73,7 +73,31 @@ index a557fe7..6a6c81a 100644
  		}
  		//#endregion
  		//#region lib/types/client/skeleton/ConversationHeader.js
-@@ -18883,13 +18893,16 @@ window.__ModuleLoader__.load({
+@@ -17967,6 +17977,7 @@ window.__ModuleLoader__.load({
+ 			const blank = session === void 0 || conversation === void 0 || session.blank && conversationPhase(session, conversation) === "blank";
+ 			return (0, react_jsx_runtime.jsxs)("header", {
+ 				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank, sessionId === void 0 && ConversationRoot_module_css_default.headerSessionless),
++				"data-dsh-region": "conversation-header",
+ 				"data-window-drag": true,
+ 				children: [(0, react_jsx_runtime.jsx)("div", {
+ 					className: ConversationRoot_module_css_default.headerLeading,
+@@ -18151,6 +18162,7 @@ window.__ModuleLoader__.load({
+ 			const currentInMore = moreTabs.some((tab) => tab.id === active?.id);
+ 			return (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsxs)("div", {
+ 				className: ConversationRoot_module_css_default.titleRow,
++				"data-dsh-region": "conversation-title-row",
+ 				children: [!hideChrome && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsxs)("div", {
+ 					className: ConversationRoot_module_css_default.titleCluster,
+ 					children: [(0, react_jsx_runtime.jsxs)("nav", {
+@@ -18203,6 +18215,7 @@ window.__ModuleLoader__.load({
+ 			}), showTabs && (0, react_jsx_runtime.jsxs)("div", {
+ 				ref: tabRow,
+ 				className: ConversationRoot_module_css_default.tabs,
++				"data-dsh-region": "conversation-tabs",
+ 				children: [(0, react_jsx_runtime.jsx)("div", {
+ 					className: ConversationRoot_module_css_default.viewTabs,
+ 					role: "tablist",
+@@ -18883,13 +18896,16 @@ window.__ModuleLoader__.load({
  		}
  		//#endregion
  		//#region \0dsh-css:/home/runner/work/deepseek-harness/deepseek-harness/packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
@@ -92,7 +116,7 @@ index a557fe7..6a6c81a 100644
  			document.head.appendChild(tag);
  		}
  		var InputBar_module_css_default = {
-@@ -18911,6 +18924,7 @@ window.__ModuleLoader__.load({
+@@ -18911,6 +18927,7 @@ window.__ModuleLoader__.load({
  			"pending": "uV2eYG_pending",
  			"placeholder": "uV2eYG_placeholder",
  			"primary": "uV2eYG_primary",
@@ -100,7 +124,7 @@ index a557fe7..6a6c81a 100644
  			"retry": "uV2eYG_retry",
  			"root": "uV2eYG_root",
  			"row": "uV2eYG_row",
-@@ -18937,7 +18951,7 @@ window.__ModuleLoader__.load({
+@@ -18937,7 +18954,7 @@ window.__ModuleLoader__.load({
  		* The no-session state renders the SAME div inert as the Workspace-picker
  		* trigger instead of a parallel tree.
  		*/
@@ -109,7 +133,7 @@ index a557fe7..6a6c81a 100644
  			const input = useInput((s) => s);
  			const notice = useNotices((s) => s);
  			const busyEnter = useBusyEnter((s) => s);
-@@ -19182,10 +19196,6 @@ window.__ModuleLoader__.load({
+@@ -19182,10 +19199,6 @@ window.__ModuleLoader__.load({
  								"data-composer-overlay": true,
  								children: renderSlot("conversation.input.overlay", {})
  							}),
@@ -120,7 +144,7 @@ index a557fe7..6a6c81a 100644
  							renderSlot("conversation.input.attachments", {
  								attachments,
  								canAcceptDrop,
-@@ -19197,25 +19207,35 @@ window.__ModuleLoader__.load({
+@@ -19197,25 +19210,35 @@ window.__ModuleLoader__.load({
  								onRetryFile: (id) => {
  									retryFileUpload?.(id);
  								},
@@ -170,17 +194,18 @@ index a557fe7..6a6c81a 100644
  							}),
  							(0, react_jsx_runtime.jsxs)("div", {
  								ref: rowRef,
-@@ -19343,8 +19363,7 @@ window.__ModuleLoader__.load({
+@@ -19343,8 +19366,8 @@ window.__ModuleLoader__.load({
  					}),
  					(0, react_jsx_runtime.jsxs)("div", {
  						className: InputBar_module_css_default.dock,
 -						"data-composer-dock": true,
 -						children: [variant === "composer" && input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", {}) : null, activity ? null : (0, react_jsx_runtime.jsx)(ContextMeter, {
++						"data-dsh-region": "composer-dock",
 +						children: [input !== void 0 && sessionId !== void 0 ? renderSlot("conversation.composer.dock", extensionZone ?? {}) : null, activity ? null : (0, react_jsx_runtime.jsx)(ContextMeter, {
  							useProjection,
  							t
  						})]
-@@ -19954,6 +19973,14 @@ window.__ModuleLoader__.load({
+@@ -19954,6 +19977,14 @@ window.__ModuleLoader__.load({
  					"conversation.hero.options": {
  						kind: "list",
  						scope: "session"
@@ -195,7 +220,7 @@ index a557fe7..6a6c81a 100644
  					}
  				},
  				slots: {
-@@ -20086,6 +20113,10 @@ window.__ModuleLoader__.load({
+@@ -20086,6 +20117,10 @@ window.__ModuleLoader__.load({
  						kind: "list",
  						scope: "session"
  					},
@@ -206,7 +231,7 @@ index a557fe7..6a6c81a 100644
  					"conversation.input.permission": {
  						kind: "single",
  						scope: "session"
-@@ -20122,6 +20153,7 @@ window.__ModuleLoader__.load({
+@@ -20122,6 +20157,7 @@ window.__ModuleLoader__.load({
  						removeAttachment: void 0,
  						resolveDraftAttachments: void 0,
  						retryFileUpload: void 0,
@@ -214,7 +239,7 @@ index a557fe7..6a6c81a 100644
  						toggleCommandMenu: void 0,
  						stop: void 0,
  						hooks: {
-@@ -20188,6 +20220,11 @@ window.__ModuleLoader__.load({
+@@ -20188,6 +20224,11 @@ window.__ModuleLoader__.load({
  						retryFileUpload: (id) => {
  							if (sessions.binding(sessionId) !== void 0) conversation.retryFileUpload(sessionId, id);
  						},
@@ -226,7 +251,7 @@ index a557fe7..6a6c81a 100644
  						toggleCommandMenu: inputTriggers === void 0 ? void 0 : (selection) => {
  							shell.dismissPopup();
  							const snapshot = shell.snapshot;
-@@ -20220,10 +20257,7 @@ window.__ModuleLoader__.load({
+@@ -20220,10 +20261,7 @@ window.__ModuleLoader__.load({
  				yield slots.register({
  					name: "main",
  					key: "conversation",

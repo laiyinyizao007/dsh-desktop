@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
-index 9700d0366c..36032a91e0 100644
+index 9700d03..ee67e19 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/client.js
 @@ -93,6 +93,23 @@ window.__ModuleLoader__.load({
@@ -178,7 +178,7 @@ index 9700d0366c..36032a91e0 100644
  			"message.turnError": "This turn failed",
  			"message.maxTokens": "Output token limit reached",
  			"message.maxTokens.hint": "The reply was cut off; earlier output is preserved in the conversation. Send \"continue\" to let the model resume.",
-@@ -7294,11 +7333,12 @@ window.__ModuleLoader__.load({
+@@ -7294,13 +7333,15 @@ window.__ModuleLoader__.load({
  		* @param props - prepared content, facts, authorized image loader, and framework Factory/locale seats.
  		* @returns the content stack using the existing user-message layout.
  		*/
@@ -192,8 +192,11 @@ index 9700d0366c..36032a91e0 100644
 +			const showBubble = text !== "" || extraBlocks.length > 0 || footer != null;
  			return (0, react_jsx_runtime.jsxs)("div", {
  				className: MessageItem_module_css_default.userStack,
++				"data-dsh-region": "chat-user-stack",
  				children: [
-@@ -7310,8 +7350,11 @@ window.__ModuleLoader__.load({
+ 					attachments.length > 0 && (0, react_jsx_runtime.jsx)("div", {
+ 						className: MessageItem_module_css_default.attachmentRow,
+@@ -7310,8 +7351,11 @@ window.__ModuleLoader__.load({
  							loadImage,
  							align: "end",
  							compact: compactImages
@@ -207,7 +210,7 @@ index 9700d0366c..36032a91e0 100644
  							title: attachment.file.name,
  							children: [(0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.FileTypeIcon, {
  								path: attachment.file.name,
-@@ -7339,8 +7382,9 @@ window.__ModuleLoader__.load({
+@@ -7339,8 +7383,9 @@ window.__ModuleLoader__.load({
  							label: t("message.extraBlock"),
  							payload: block,
  							truncatedLabel: truncated
@@ -218,7 +221,7 @@ index 9700d0366c..36032a91e0 100644
  					referenceLabels.length > 0 && (0, react_jsx_runtime.jsx)("div", {
  						className: MessageItem_module_css_default.referenceSummary,
  						children: t("message.referenceSummary", { labels: referenceLabels.join(t("message.referenceSeparator")) })
-@@ -13054,7 +13098,8 @@ window.__ModuleLoader__.load({
+@@ -13054,7 +13099,8 @@ window.__ModuleLoader__.load({
  			"configForms",
  			"remote",
  			"remote.session",
@@ -228,7 +231,7 @@ index 9700d0366c..36032a91e0 100644
  		];
  		/**
  		* Mount all Chat-owned contributions.
-@@ -13144,6 +13189,14 @@ window.__ModuleLoader__.load({
+@@ -13144,6 +13190,14 @@ window.__ModuleLoader__.load({
  				}, LinkOpeningRow));
  			});
  			const transcriptView = new TranscriptViewPolicy(chatSettings, "dshDesktop" in globalThis ? "standard" : DEFAULT_TRANSCRIPT_VIEW_MODE);
@@ -243,7 +246,7 @@ index 9700d0366c..36032a91e0 100644
  			const presentation = derivePresentationPolicy(transcriptView.mode, transcriptView.collapseTiming);
  			const performancePolicy = new PerformanceUsagePolicy(chatSettings);
  			ctx.effect(() => () => {
-@@ -13156,6 +13209,7 @@ window.__ModuleLoader__.load({
+@@ -13156,6 +13210,7 @@ window.__ModuleLoader__.load({
  				name: "conversation.chat.user.content",
  				scope: "session",
  				locale: NS,
@@ -251,7 +254,7 @@ index 9700d0366c..36032a91e0 100644
  				children: { "conversation.chat.user.images": {
  					kind: "single",
  					scope: "session"
-@@ -13208,7 +13262,7 @@ window.__ModuleLoader__.load({
+@@ -13208,7 +13263,7 @@ window.__ModuleLoader__.load({
  				name: "conversation.chat.flow",
  				locale: NS,
  				store: chatStore,
@@ -260,7 +263,7 @@ index 9700d0366c..36032a91e0 100644
  					kind: "keyed",
  					scope: "session",
  					inject: CHAT_NODE_INJECT
-@@ -13242,10 +13296,22 @@ window.__ModuleLoader__.load({
+@@ -13242,10 +13297,22 @@ window.__ModuleLoader__.load({
  							fileMentions: (owner) => ctx.get("chatFileMentions")?.forClosing(owner, sessionId),
  							openFile: async (path, options) => {
  								const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd;
@@ -288,7 +291,7 @@ index 9700d0366c..36032a91e0 100644
  							openExternalLink: (url) => {
  								if (linkOpening.getSnapshot() === "sidebar" && ctx.get("sidebarRightTabs")?.get("browser") !== void 0) ctx.sidebarRight.openTab("browser", { params: { url } });
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
-index 8a03bd5ab7..44532502fb 100644
+index 8a03bd5..4453250 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-chat/lib/types/client/contract/slots.d.ts
 @@ -33,12 +33,18 @@ export type UsePresentation = SnapshotSelectorHook<ChatPresentationPolicy>;
@@ -362,10 +365,3 @@ index 8a03bd5ab7..44532502fb 100644
          /**
           * Command row keyed by the command name. The component receives the folded
           * command lifecycle and linked compaction when present. Reusing a key
-@@ -411,4 +434,4 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
-         };
-     }
- }
--//# sourceMappingURL=slots.d.ts.map
-\ No newline at end of file
-+//# sourceMappingURL=slots.d.ts.map

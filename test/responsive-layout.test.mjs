@@ -25,7 +25,10 @@ const UPSTREAM_FILES = {
   '@deepseek-ai/dsh-client-ui-layout': 'lib/client.js',
   '@deepseek-ai/dsh-client-ui-sidebar': 'lib/client.js',
   '@deepseek-ai/dsh-client-ui-conversation': 'lib/client.js',
+  '@deepseek-ai/dsh-client-ui-chat': 'lib/client.js',
   '@deepseek-ai/dsh-client-ui-settings-general': 'lib/client.js',
+  '@deepseek-ai/dsh-client-ui-primitives': 'lib/index.js',
+  '@deepseek-ai/dsh-client-ui-model-selection': 'lib/client.js',
 }
 
 /** The patch file that carries the markers of one upstream package. */
@@ -96,7 +99,12 @@ describe('the anchor manifest', () => {
         UPSTREAM_FILES[anchor.package],
         `${key} names an unknown upstream package: ${anchor.package}`
       ).toBeTruthy()
-      expect(['marker', 'attribute'], `${key} has an unknown origin`).toContain(anchor.origin)
+      // 'element' is a semantic HTML element: it has no upstream class
+      // name to rehash, so it is as stable as an attribute.
+      expect(
+        ['marker', 'attribute', 'element'],
+        `${key} has an unknown origin`
+      ).toContain(anchor.origin)
     }
   })
 
@@ -116,6 +124,24 @@ describe('the anchor manifest', () => {
       if (anchor.origin === 'marker') {
         const marker = markerValue(anchor.selector)
         expect(source, `${anchor.package} does not carry ${key}`).toContain(`"${marker}"`)
+        continue
+      }
+      if (anchor.origin === 'element') {
+        // A semantic element name — `table`, `button` — has no upstream
+        // class name to rehash, so the element itself is the contract.
+        // Upstream renders it as a string argument to `createElement`, so
+        // the name appears quoted rather than as a tag. A selector that
+        // carries an attribute is an attribute anchor in disguise and is
+        // checked by name below.
+        if (!anchor.selector.includes('[')) {
+          expect(
+            source,
+            `${anchor.package} does not carry ${key}`
+          ).toMatch(new RegExp(`["'\`]${anchor.selector}["'\`]`))
+          continue
+        }
+        const attribute = anchor.selector.slice(1, -1).split('=')[0]
+        expect(source, `${anchor.package} does not carry ${key}`).toContain(attribute)
         continue
       }
       // An upstream attribute is written with a dynamic value — the resize
@@ -177,5 +203,77 @@ describe('the plugin source', () => {
     const source = await readFile(clientPath, 'utf8')
     expect(source).toContain('data-plugin-css')
     expect(source).toContain('dsh-desktop-responsive')
+  })
+
+  it('does not assume upstream DOM structure', async () => {
+    const source = stripComments(await readFile(clientPath, 'utf8'))
+    // A structural selector such as `:first-child` encodes an assumption
+    // about upstream's render tree that no marker can protect. Every
+    // element the plugin touches has to carry an anchor instead.
+    const structural = source.match(/:\s*(first-child|last-child|nth-child|nth-of-type|first-of-type|last-of-type)\b/g)
+    expect(
+      structural,
+      `the plugin relies on upstream's DOM structure: ${structural?.join(', ')}`
+    ).toBeNull()
+  })
+
+  it('does not reach into upstream for anything but its anchors', async () => {
+    const source = stripComments(await readFile(clientPath, 'utf8'))
+    // The frame's grid is the one upstream value the plugin reads, and it
+    // reads it through the style property rather than through a selector.
+    const reads = source.match(/querySelector(?:All)?\(([^)]*)\)/g) ?? []
+    const anchors = await loadManifest()
+    const known = new Set(Object.values(anchors).map(anchor => anchor.selector))
+    for (const read of reads) {
+      const argument = /querySelector(?:All)?\(([^)]*)\)/.exec(read)?.[1] ?? ''
+      if (argument.includes('`')) continue // A template built from the manifest.
+      const literal = /'([^']+)'|"([^"]+)"/.exec(argument)
+      if (literal === null) continue
+      const selector = literal[1] ?? literal[2]
+      expect(
+        known.has(selector) || selector.startsWith('[data-dshr-'),
+        `the plugin queries ${selector}, which is not in the manifest`
+      ).toBe(true)
+    }
+  })
+})
+
+describe("the plugin's own dictionary", () => {
+  it('names the model menu the way upstream names it', async () => {
+    // The plugin finds the model menu by the name upstream gives it, so the
+    // two dictionaries have to agree. Upstream ships its strings inside its
+    // own bundle rather than in a locale file.
+    const upstream = await upstreamSource('@deepseek-ai/dsh-client-ui-model-selection')
+    const names = [...upstream.matchAll(/"menu\.aria":\s*"([^"]+)"/g)].map(match => match[1])
+    expect(names.length).toBeGreaterThan(0)
+    const plugin = await readFile(clientPath, 'utf8')
+    const own = [...plugin.matchAll(/'modelMenu\.aria':\s*'([^']+)'/g)].map(match => match[1])
+    for (const name of names) {
+      expect(
+        own,
+        `the plugin does not know the model menu name "${name}"; upstream renamed it`
+      ).toContain(name)
+    }
+  })
+})
+
+describe('the upstream patches', () => {
+  it('are named after the installed upstream version', async () => {
+    // patch-package applies a patch whose file name carries another
+    // version, but only with a warning. Renaming the file is mechanical,
+    // so the drift is caught here instead of in a build log.
+    const anchors = await loadManifest()
+    const packages = new Set(Object.values(anchors).map(anchor => anchor.package))
+    for (const pkg of packages) {
+      const manifest = JSON.parse(
+        await readFile(join(repoRoot, 'node_modules', pkg, 'package.json'), 'utf8')
+      )
+      const file = join(
+        repoRoot,
+        'patches',
+        `${pkg.replace('/', '+')}+${manifest.version}.patch`
+      )
+      await expect(readFile(file, 'utf8'), `${pkg} has no patch for ${manifest.version}`).resolves.toBeTruthy()
+    }
   })
 })

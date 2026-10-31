@@ -28,9 +28,25 @@ async function activatePlugin() {
   if (captured === null) throw new Error('the client plugin did not register itself')
   const exports = captured.factory()
   const disposers = []
+  const dictionaries = new Map()
   exports.apply({
     effect(body) {
       disposers.push(body())
+    },
+    locale: {
+      register(namespace, dictionary) {
+        dictionaries.set(namespace, dictionary)
+      },
+      bind(namespace) {
+        // The plugin's own dictionary carries both locales; the English one
+        // stands in for the running locale, so a key resolves to a real
+        // string rather than to itself.
+        return key => {
+          const dictionary = dictionaries.get(namespace)
+          if (dictionary === undefined) return key
+          return dictionary.en?.[key] ?? dictionary[key] ?? key
+        }
+      },
     },
   })
   return {
@@ -40,6 +56,27 @@ async function activatePlugin() {
       for (const dispose of disposers.reverse()) dispose?.()
     },
   }
+}
+
+/**
+ * Stand in for the visual viewport.
+ *
+ * A phone's keyboard takes part of the screen without changing the
+ * window's size, so only the visual viewport knows. The stub replaces it
+ * with one that reports a different size.
+ */
+function stubVisualViewport({ width, height, scale = 1, offsetTop = 0 }) {
+  Object.defineProperty(window, 'visualViewport', {
+    value: {
+      width,
+      height,
+      scale,
+      offsetTop,
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    configurable: true,
+  })
 }
 
 /** Let the MutationObserver callbacks run. */
@@ -60,15 +97,16 @@ function buildFrame({ width = 390, collapsed = false, grid } = {}) {
   frame.setAttribute('data-dsh-region', 'layout')
   frame.style.setProperty(
     'grid-template-columns',
-    grid ?? '280px minmax(400px, 1fr) minmax(0px, 0px)'
+    grid ?? '56px minmax(400px, 1fr) minmax(0px, 0px)'
   )
   if (collapsed) frame.setAttribute('data-sidebar-collapsed', 'true')
+  let currentWidth = width
   frame.getBoundingClientRect = () => ({
-    width,
+    width: currentWidth,
     height: 800,
     top: 0,
     left: 0,
-    right: width,
+    right: currentWidth,
     bottom: 800,
     x: 0,
     y: 0,
@@ -93,8 +131,19 @@ function buildFrame({ width = 390, collapsed = false, grid } = {}) {
 
   const center = document.createElement('div')
   center.setAttribute('data-dsh-region', 'center')
+  const header = document.createElement('header')
+  header.setAttribute('data-dsh-region', 'conversation-header')
+  const tabs = document.createElement('div')
+  tabs.setAttribute('data-dsh-region', 'conversation-tabs')
+  header.appendChild(tabs)
+  center.appendChild(header)
   const conversation = document.createElement('div')
   conversation.setAttribute('data-conversation-content', '')
+  // The status row belongs to a session.
+  conversation.setAttribute('data-conversation-session', 'session-1')
+  const dock = document.createElement('div')
+  dock.setAttribute('data-dsh-region', 'composer-dock')
+  conversation.appendChild(dock)
   center.appendChild(conversation)
   frame.appendChild(center)
 
@@ -103,7 +152,49 @@ function buildFrame({ width = 390, collapsed = false, grid } = {}) {
   frame.appendChild(rightbar)
 
   document.body.appendChild(frame)
-  return { frame, sidebar, center, rightbar, toggle, toggles: () => toggles }
+  return {
+    frame,
+    sidebar,
+    center,
+    rightbar,
+    toggle,
+    toggles: () => toggles,
+    setWidth(next) {
+      currentWidth = next
+    },
+  }
+}
+
+/**
+ * Build a stand-in for the model menu upstream renders into a portal.
+ *
+ * The root pane lists the model and the reasoning effort, each as a row of
+ * a label and a value. The plugin adds its usage entry to that pane, so
+ * the menu is what the entry is looked up in.
+ */
+function buildModelMenu({ aria = 'Model and reasoning effort' } = {}) {
+  const menu = document.createElement('div')
+  menu.setAttribute('data-menu-material', 'translucent')
+  menu.setAttribute('role', 'menu')
+  menu.setAttribute('aria-label', aria)
+  const row = (label, value) => {
+    const button = document.createElement('button')
+    button.setAttribute('role', 'menuitem')
+    button.className = 'cell'
+    const labelSpan = document.createElement('span')
+    labelSpan.className = 'cellLabel'
+    labelSpan.textContent = label
+    const valueSpan = document.createElement('span')
+    valueSpan.className = 'cellValue'
+    valueSpan.textContent = value
+    button.appendChild(labelSpan)
+    button.appendChild(valueSpan)
+    return button
+  }
+  menu.appendChild(row('Model', 'MiniMax-M3'))
+  menu.appendChild(row('Reasoning effort', 'High'))
+  document.body.appendChild(menu)
+  return menu
 }
 
 /** Build a stand-in for the portalled settings dialog. */
@@ -126,6 +217,9 @@ function buildSettingsDialog() {
   panel.appendChild(nav)
   const content = document.createElement('div')
   content.setAttribute('data-dsh-region', 'settings-content')
+  const header = document.createElement('div')
+  header.setAttribute('data-dsh-region', 'settings-header')
+  content.appendChild(header)
   const options = document.createElement('div')
   options.setAttribute('data-dsh-region', 'settings-options')
   content.appendChild(options)
@@ -147,7 +241,12 @@ describe('dsh-desktop-responsive client', () => {
     document.body.innerHTML = ''
     document.documentElement.removeAttribute('data-dshr-mode')
     document.documentElement.removeAttribute('data-dshr-missing')
+    document.documentElement.style.removeProperty('--dsh-visual-width')
+    document.documentElement.style.removeProperty('--dsh-visual-height')
+    document.documentElement.style.removeProperty('--dsh-visual-offset')
     delete window.__ModuleLoader__
+    // The viewport stub must not leak into the next test.
+    delete window.visualViewport
   })
 
   it('switches to the phone layout when the frame is narrow', async () => {
@@ -180,9 +279,9 @@ describe('dsh-desktop-responsive client', () => {
     const { frame } = buildFrame({ width: 390, collapsed: true })
     await flush()
     expect(frame.getAttribute('data-dshr-drawer')).toBe('closed')
-    // The rail keeps its track, so the content is not pushed to the side.
+    // On a phone the rail's track goes away too: the drawer replaces it.
     const grid = frame.style.getPropertyValue('grid-template-columns')
-    expect(grid.startsWith('280px')).toBe(true)
+    expect(grid.startsWith('0px')).toBe(true)
   })
 
   it('gives the whole width back to the centre column while the drawer is open', async () => {
@@ -193,31 +292,36 @@ describe('dsh-desktop-responsive client', () => {
     expect(grid).toContain('minmax(400px, 1fr)')
   })
 
-  it('restores the grid React wrote when the drawer closes', async () => {
-    const { frame } = buildFrame({ width: 390 })
-    await flush()
-    frame.setAttribute('data-sidebar-collapsed', 'true')
+  it('restores the grid React wrote when the layout goes back to wide', async () => {
+    const { frame, setWidth } = buildFrame({ width: 390 })
     await flush()
     expect(frame.style.getPropertyValue('grid-template-columns')).toBe(
-      '280px minmax(400px, 1fr) minmax(0px, 0px)'
+      '0px minmax(400px, 1fr) minmax(0px, 0px)'
+    )
+    setWidth(1280)
+    window.dispatchEvent(new window.Event('resize'))
+    await flush()
+    expect(frame.style.getPropertyValue('grid-template-columns')).toBe(
+      '56px minmax(400px, 1fr) minmax(0px, 0px)'
     )
   })
 
-  it('restores the grid React rewrote while the drawer was open', async () => {
-    const { frame } = buildFrame({ width: 390 })
+  it('restores the grid React rewrote while the phone layout was active', async () => {
+    const { frame, setWidth } = buildFrame({ width: 390 })
     await flush()
     // React re-renders the inline grid whenever the layout changes.
     frame.style.setProperty(
       'grid-template-columns',
-      '320px minmax(400px, 1fr) minmax(0px, 0px)'
+      '64px minmax(400px, 1fr) minmax(0px, 0px)'
     )
     await flush()
-    frame.setAttribute('data-sidebar-collapsed', 'true')
+    setWidth(1280)
+    window.dispatchEvent(new window.Event('resize'))
     await flush()
     // The value React wrote last wins, not the one captured when the
-    // drawer opened.
+    // phone layout started.
     expect(frame.style.getPropertyValue('grid-template-columns')).toBe(
-      '320px minmax(400px, 1fr) minmax(0px, 0px)'
+      '64px minmax(400px, 1fr) minmax(0px, 0px)'
     )
   })
 
@@ -286,6 +390,417 @@ describe('dsh-desktop-responsive client', () => {
     await flush()
     const missing = document.documentElement.getAttribute('data-dshr-missing') ?? ''
     expect(missing).toContain('settingsContent')
+  })
+
+  it('closes the drawer when the main panel is swapped', async () => {
+    const { frame, center, toggles } = buildFrame({ width: 390 })
+    await flush()
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+    // Upstream replaces the child of the main slot when the panel changes.
+    const slot = document.createElement('div')
+    slot.setAttribute('data-slot', 'main')
+    slot.appendChild(document.createElement('div'))
+    center.replaceChildren(slot)
+    await flush()
+    expect(toggles()).toBe(1)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('closed')
+  })
+
+  it('keeps the drawer open while the conversation streams', async () => {
+    const { frame, center, toggles } = buildFrame({ width: 390 })
+    await flush()
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+    // A streamed answer adds nodes inside the conversation body.
+    const content = center.querySelector('[data-conversation-content]')
+    content.appendChild(document.createElement('p'))
+    await flush()
+    expect(toggles()).toBe(0)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+  })
+
+  it('reports a conversation that overflows the frame', async () => {
+    const { center } = buildFrame({ width: 390 })
+    const content = center.querySelector('[data-conversation-content]')
+    // jsdom does no layout, so the overflow is declared rather than measured.
+    Object.defineProperty(content, 'scrollWidth', { value: 680, configurable: true })
+    Object.defineProperty(content, 'clientWidth', { value: 334, configurable: true })
+    await flush()
+    const problem = document.documentElement.getAttribute('data-dshr-problem') ?? ''
+    expect(problem).toContain('conversation content overflows')
+  })
+
+  it('reports a frame grid that is no longer three columns', async () => {
+    const { frame } = buildFrame({ width: 390 })
+    frame.style.setProperty('grid-template-columns', '56px minmax(0px, 1fr) 0px 200px')
+    await flush()
+    const problem = document.documentElement.getAttribute('data-dshr-problem') ?? ''
+    expect(problem).toContain('tracks')
+  })
+
+  it('shows a menu button where the hidden rail had its toggle', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    const button = document.querySelector('[data-dshr-menu]')
+    expect(button).not.toBeNull()
+    expect(button.getAttribute('data-dshr-menu-visible')).toBe('true')
+    expect(button.getAttribute('aria-label')).toBe('Open sidebar')
+  })
+
+  it('hides the menu button when the rail took no space to begin with', async () => {
+    // macOS and a window with a title bar already have a zero-width rail;
+    // the platform's own window controls live there.
+    buildFrame({ width: 390, grid: '0px minmax(400px, 1fr) minmax(0px, 0px)' })
+    await flush()
+    const button = document.querySelector('[data-dshr-menu]')
+    expect(button).not.toBeNull()
+    expect(button.hasAttribute('data-dshr-menu-visible')).toBe(false)
+  })
+
+  it('opens the drawer from the menu button', async () => {
+    const { frame, toggles } = buildFrame({ width: 390, collapsed: true })
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    expect(toggles()).toBe(1)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+  })
+
+  it('hides the menu button while the drawer is open', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    expect(
+      document.querySelector('[data-dshr-menu]').hasAttribute('data-dshr-menu-visible')
+    ).toBe(false)
+  })
+
+  it('publishes the visible width and height of the screen', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--dsh-visual-width')).toBe(
+      `${window.innerWidth}px`
+    )
+    expect(root.style.getPropertyValue('--dsh-visual-height')).toBe(
+      `${window.innerHeight}px`
+    )
+  })
+
+  it('follows the visible width when a landscape keyboard takes the side', async () => {
+    // A frame that is wider than the visible part of the screen: the
+    // layout must not be laid out for more space than the user can see.
+    window.innerWidth = 844
+    const { frame } = buildFrame({ width: 844 })
+    stubVisualViewport({ width: 420, height: 360 })
+    window.dispatchEvent(new window.Event('resize'))
+    await flush()
+    expect(document.documentElement.getAttribute('data-dshr-mode')).toBe('phone')
+    expect(document.documentElement.style.getPropertyValue('--dsh-visual-width')).toBe(
+      '420px'
+    )
+  })
+
+  it('keeps the layout viewport when the user pinch-zooms', async () => {
+    // A zoom is not a smaller screen: re-laying out the shell would fight
+    // the zoom.
+    buildFrame({ width: 390 })
+    stubVisualViewport({ width: 200, height: 300, scale: 2 })
+    window.dispatchEvent(new window.Event('resize'))
+    await flush()
+    expect(document.documentElement.style.getPropertyValue('--dsh-visual-width')).toBe(
+      `${window.innerWidth}px`
+    )
+    expect(document.documentElement.style.getPropertyValue('--dsh-visual-height')).toBe(
+      `${window.innerHeight}px`
+    )
+  })
+
+  it('publishes the scroll offset of the visible area', async () => {
+    // Safari scrolls the layout viewport when the keyboard opens, so the
+    // visible band starts below its top.
+    buildFrame({ width: 390 })
+    stubVisualViewport({ width: 390, height: 520, offsetTop: 180 })
+    window.dispatchEvent(new window.Event('resize'))
+    await flush()
+    expect(
+      document.documentElement.style.getPropertyValue('--dsh-visual-offset')
+    ).toBe('180px')
+  })
+
+  it('publishes the visible height for the on-screen keyboard', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const height = document.documentElement.style.getPropertyValue('--dsh-visual-height')
+    expect(height).toBe(`${window.innerHeight}px`)
+  })
+
+  it('follows the visual viewport when the keyboard opens', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    // A phone's keyboard takes the bottom of the screen without changing
+    // the window's height, so only the visual viewport knows.
+    const viewport = { height: 520, offsetTop: 0 }
+    Object.defineProperty(window, 'visualViewport', {
+      value: {
+        get height() {
+          return viewport.height
+        },
+        offsetTop: 0,
+        addEventListener() {},
+        removeEventListener() {},
+      },
+      configurable: true,
+    })
+    window.dispatchEvent(new window.Event('resize'))
+    await flush()
+    expect(document.documentElement.style.getPropertyValue('--dsh-visual-height')).toBe(
+      '520px'
+    )
+    delete window.visualViewport
+  })
+
+  it('folds the view tabs and the status row away on a phone', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const css = style.textContent
+    // The rows collapse with a zero height rather than display: none, so
+    // restoring them does not depend on the upstream display value.
+    expect(css).toContain('conversation-tabs')
+    expect(css).toContain('composer-dock')
+    expect(css).toMatch(/conversation-tabs[\s\S]{0,200}height: 0 !important/)
+    expect(css).toMatch(/composer-dock[\s\S]{0,200}height: 0 !important/)
+  })
+
+  it('gives a sent message the whole width of a phone', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const css = style.textContent
+    // The side clearance upstream reserves for the composer card is dropped,
+    // so the flow's own gutter is the only margin around the conversation.
+    expect(css).toMatch(/dsh-composer-side-clearance: 0px !important/)
+    // The column takes that gutter whole instead of taking a little off on
+    // top of it.
+    expect(css).toMatch(/dsh-chat-content-width: min\(100%, 920px\) !important/)
+    // And the bubble takes the column, so a long message fills the screen
+    // while a short one still renders as a small bubble.
+    expect(css).toMatch(
+      /data-dsh-region="chat-user-stack"\][^}]*max-width: 100% !important/
+    )
+  })
+
+  it('offers a chevron for the folded tabs and an entry for the status row', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    const tabs = document.querySelector('[data-dshr-tabs-toggle]')
+    expect(tabs).not.toBeNull()
+    expect(tabs.getAttribute('data-dshr-toggle-visible')).toBe('true')
+    // The usage entry is a row of the model menu, so it arrives with it.
+    buildModelMenu()
+    await flush()
+    const usage = document.querySelector('[data-dshr-usage]')
+    expect(usage).not.toBeNull()
+    expect(usage.getAttribute('role')).toBe('menuitem')
+    // It sits after the rows upstream rendered, and takes their geometry.
+    expect(usage.previousElementSibling.textContent).toContain('High')
+    expect(usage.className).toBe('cell')
+  })
+
+  it('puts the usage entry in the model menu rather than in the corner', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    // Nothing floats in the corner of the screen any more.
+    expect(document.querySelector('[data-dshr-usage]')).toBeNull()
+    buildModelMenu()
+    await flush()
+    const usage = document.querySelector('[data-dshr-usage]')
+    expect(usage).not.toBeNull()
+    expect(usage.parentElement.getAttribute('data-menu-material')).toBe('translucent')
+  })
+
+  it('leaves the deeper panes of the model menu alone', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    // The pane that lists the models uses radio items, not cells.
+    const menu = document.createElement('div')
+    menu.setAttribute('data-menu-material', 'translucent')
+    menu.setAttribute('role', 'group')
+    const radio = document.createElement('button')
+    radio.setAttribute('role', 'menuitemradio')
+    radio.setAttribute('aria-checked', 'true')
+    menu.appendChild(radio)
+    document.body.appendChild(menu)
+    await flush()
+    expect(document.querySelector('[data-dshr-usage]')).toBeNull()
+  })
+
+  it('folds the tabs back when their chevron is pressed', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    expect(document.documentElement.hasAttribute('data-dshr-tabs')).toBe(false)
+    document.querySelector('[data-dshr-tabs-toggle]').click()
+    await flush()
+    expect(document.documentElement.getAttribute('data-dshr-tabs')).toBe('open')
+  })
+
+  it('opens the usage sheet from its single entry', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    buildModelMenu()
+    await flush()
+    expect(document.documentElement.hasAttribute('data-dshr-sheet')).toBe(false)
+    document.querySelector('[data-dshr-usage]').click()
+    await flush()
+    expect(document.documentElement.getAttribute('data-dshr-sheet')).toBe('open')
+    // The sheet has a backdrop that dismisses it.
+    const backdrop = document.querySelector('[data-dshr-sheet-backdrop]')
+    expect(backdrop).not.toBeNull()
+    backdrop.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    await flush()
+    expect(document.documentElement.hasAttribute('data-dshr-sheet')).toBe(false)
+  })
+
+  it('closes the usage sheet on Escape', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    buildModelMenu()
+    await flush()
+    document.querySelector('[data-dshr-usage]').click()
+    await flush()
+    document.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
+    await flush()
+    expect(document.documentElement.hasAttribute('data-dshr-sheet')).toBe(false)
+  })
+
+  it('folds the model selector to its icon on a phone', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // The seat reads two inherited variables, so the root can fold the
+    // model name away without touching the row upstream measures.
+    expect(style.textContent).toContain('--dsh-composer-model-text-display: none')
+    expect(style.textContent).toContain('--dsh-composer-model-icon-display: block')
+  })
+
+  it('hides the folded-row controls in the wide layout', async () => {
+    buildFrame({ width: 1280 })
+    await flush()
+    expect(
+      document.querySelector('[data-dshr-tabs-toggle]').hasAttribute('data-dshr-toggle-visible')
+    ).toBe(false)
+    // A wide layout shows the status row itself, so it needs no entry.
+    buildModelMenu()
+    await flush()
+    expect(document.querySelector('[data-dshr-usage]')).toBeNull()
+  })
+
+  it('lets a wide table scroll sideways on a phone', async () => {
+    buildFrame({ width: 390 })
+    const conversation = document.querySelector('[data-conversation-content]')
+    const table = document.createElement('table')
+    conversation.appendChild(table)
+    await flush()
+    // Upstream hides a wide table's scroll bar until the pointer hovers
+    // it, which on a phone leaves the last columns out of reach.
+    const scroller = table.parentElement
+    expect(scroller.getAttribute('data-dshr-table-scroll')).toBe('')
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    expect(style.textContent).toMatch(/data-dshr-table-scroll\][\s\S]{0,120}overflow-x: auto/)
+  })
+
+  it('shows the table hint only while there is more to the right', async () => {
+    buildFrame({ width: 390 })
+    const conversation = document.querySelector('[data-conversation-content]')
+    const table = document.createElement('table')
+    conversation.appendChild(table)
+    await flush()
+    const scroller = table.parentElement
+    // jsdom does no layout, so the sizes are declared rather than measured.
+    Object.defineProperty(scroller, 'scrollWidth', { value: 640, configurable: true })
+    Object.defineProperty(scroller, 'clientWidth', { value: 350, configurable: true })
+    Object.defineProperty(scroller, 'scrollLeft', { value: 0, writable: true, configurable: true })
+    await flush()
+    expect(scroller.hasAttribute('data-dshr-overflow')).toBe(true)
+    scroller.scrollLeft = 290
+    scroller.dispatchEvent(new window.Event('scroll'))
+    await flush()
+    expect(scroller.hasAttribute('data-dshr-overflow')).toBe(false)
+  })
+
+  it('gives the body text a little more room to breathe', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    expect(style.textContent).toMatch(/data-conversation-content\] p[\s\S]{0,120}line-height: calc\(26px/)
+  })
+
+  it('raises the smallest chrome labels on a phone', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // The theme hands the sizes out as tokens, so the phone layout can
+    // raise the small end without touching a component.
+    expect(style.textContent).toContain('--dsw-font-xxxs-11: 12px/15px')
+    expect(style.textContent).toContain('--dsw-font-xxs-12: 13px/19px')
+    expect(style.textContent).toContain('--dsw-font-xs-13: 14px/21px')
+  })
+
+  it('nudges the reading size only while the user has not chosen one', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    // The default: the plugin may raise it.
+    expect(document.documentElement.getAttribute('data-dshr-content-scale')).toBe('on')
+    // The user picked a size: their choice wins.
+    document.body.style.setProperty('--dsh-content-font-size', '16px')
+    await flush()
+    expect(document.documentElement.hasAttribute('data-dshr-content-scale')).toBe(false)
+    document.body.style.removeProperty('--dsh-content-font-size')
+  })
+
+  it('grows the icons in the surfaces the reader touches', async () => {
+    buildFrame({ width: 390 })
+    await flush()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // The injected stylesheet carries the interpolated selector.
+    expect(style.textContent).toMatch(
+      /data-conversation-region="composer"\] button svg[\s\S]{0,160}width: 18px/
+    )
+  })
+
+  it('collapses the actions in the header into one menu', async () => {
+    // The rail is collapsed, so the drawer is not covering the screen.
+    buildFrame({ width: 390, collapsed: true })
+    const header = document.querySelector('[data-dsh-region="conversation-header"]')
+    const utilities = document.createElement('div')
+    utilities.setAttribute('data-slot', 'conversation.session.header.utilities')
+    utilities.appendChild(document.createElement('button'))
+    header.appendChild(utilities)
+    await flush()
+    // The trigger stands in for the six small buttons.
+    const trigger = document.querySelector('[data-dshr-actions]')
+    expect(trigger).not.toBeNull()
+    expect(trigger.getAttribute('data-dshr-toggle-visible')).toBe('true')
+    // The menu is folded away until it is asked for.
+    expect(document.documentElement.hasAttribute('data-dshr-actions-open')).toBe(false)
+    trigger.click()
+    await flush()
+    expect(document.documentElement.getAttribute('data-dshr-actions-open')).toBe('open')
+  })
+
+  it('publishes the title row centre so the controls line up', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    const center = document.querySelector('[data-dsh-region="conversation-header"]')
+    const row = document.createElement('div')
+    row.setAttribute('data-dsh-region', 'conversation-title-row')
+    center.appendChild(row)
+    await flush()
+    // The row's height follows its content, so the controls are measured
+    // against it rather than pinned to a fixed offset.
+    row.getBoundingClientRect = () => ({ y: 10, height: 34, top: 10, bottom: 44, width: 280, left: 20, right: 300 })
+    await flush()
+    expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
   })
 
   it('injects its stylesheet exactly once', async () => {

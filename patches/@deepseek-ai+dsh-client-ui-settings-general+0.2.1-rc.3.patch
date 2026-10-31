@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 3e0cc49..a5ad9ac 100644
+index 3e0cc49..46d4408 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 @@ -63,7 +63,7 @@ window.__ModuleLoader__.load({
@@ -37,7 +37,7 @@ index 3e0cc49..a5ad9ac 100644
  							children: rows.map((row) => (0, react_jsx_runtime.jsxs)("button", {
  								type: "button",
  								className: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),
-@@ -315,9 +319,13 @@ window.__ModuleLoader__.load({
+@@ -315,11 +319,16 @@ window.__ModuleLoader__.load({
  									children: row.label
  								})]
  							}, row.id))
@@ -50,8 +50,11 @@ index 3e0cc49..a5ad9ac 100644
 +					"data-dsh-region": "settings-content",
  						children: [(0, react_jsx_runtime.jsxs)("div", {
  							className: SettingsRoot_module_css_default.header,
++							"data-dsh-region": "settings-header",
  							children: [(0, react_jsx_runtime.jsx)("div", {
-@@ -334,6 +342,7 @@ window.__ModuleLoader__.load({
+ 								className: SettingsRoot_module_css_default.actions,
+ 								children: renderSlot("settings.action", {})
+@@ -334,6 +343,7 @@ window.__ModuleLoader__.load({
  							})]
  						}), (0, react_jsx_runtime.jsx)("div", {
  							className: SettingsRoot_module_css_default.options,
@@ -59,7 +62,7 @@ index 3e0cc49..a5ad9ac 100644
  							children: active !== void 0 && renderSlot("settings.section", { close: onClose }, { only: active })
  						})]
  					})]
-@@ -360,10 +369,7 @@ window.__ModuleLoader__.load({
+@@ -360,10 +370,7 @@ window.__ModuleLoader__.load({
  			const connectionState = useConnectionState((state) => state);
  			const previousConnectionState = (0, react.useRef)(connectionState);
  			const onboardingSteps = useOnboardingSteps((s) => s);
@@ -71,7 +74,7 @@ index 3e0cc49..a5ad9ac 100644
  			const onboardingStep = requestedOnboarding !== void 0 ? onboardingSteps.find((step) => step.id === requestedOnboarding) : onboardingActive ? onboardingSteps.find((step) => !completedOnboarding.has(step.id)) : void 0;
  			(0, react.useEffect)(() => {
  				if (onboardingActive) return;
-@@ -1253,6 +1259,10 @@ window.__ModuleLoader__.load({
+@@ -1253,6 +1260,10 @@ window.__ModuleLoader__.load({
  							kind: "single",
  							scope: "root"
  						},
