@@ -18,9 +18,27 @@ import sys
 import time
 from pathlib import Path
 
-BASE = os.environ.get("DSH_HARNESS_BASE", "http://127.0.0.1:43129")
+BASE = os.environ.get("DSH_HARNESS_BASE", "")
 LOG = Path(os.environ.get("DSH_HARNESS_LOG", "/var/log/dsh-web.log"))
 COOKIE_JAR = Path(os.environ.get("DSH_COOKIE_JAR", "/tmp/.dsh-rpc-cookies.txt"))
+
+
+def harness_base() -> str:
+    """The address the Harness actually listens on.
+
+    The default is not `127.0.0.1`: the Harness refuses a wildcard host, so a
+    deployment that serves other devices binds a concrete interface address
+    and loopback is not listening at all. The startup log names the address
+    it printed.
+    """
+    if BASE:
+        return BASE
+    if LOG.exists():
+        matches = re.findall(r"dsh web: http://([^\s/]+):(\d+)/", LOG.read_text(errors="replace"))
+        if matches:
+            host, port = matches[-1]
+            return f"http://{host}:{port}"
+    return "http://127.0.0.1:43129"
 
 
 def launch_token() -> str:
@@ -38,7 +56,7 @@ def session() -> None:
     """Trade the launch token for a session cookie."""
     subprocess.run(
         ["curl", "-s", "-c", str(COOKIE_JAR), "-o", "/dev/null", "--max-time", "10",
-         f"{BASE}/?token={launch_token()}"],
+         f"{harness_base()}/?token={launch_token()}"],
         check=True,
     )
 
@@ -52,7 +70,7 @@ def rpc(endpoint: str, args: dict) -> dict:
         ["curl", "-s", "-b", str(COOKIE_JAR), "-X", "POST",
          "-H", "content-type: application/json",
          "--data-binary", "@/tmp/.dsh-rpc-body.json", "--max-time", "30",
-         f"{BASE}/api/{endpoint}"],
+         f"{harness_base()}/api/{endpoint}"],
         capture_output=True,
         text=True,
     )

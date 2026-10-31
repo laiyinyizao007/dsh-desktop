@@ -39,6 +39,14 @@
     - id: dsh-desktop-onboarding
       name: dsh-desktop-onboarding
 
+    # Phone-width layout for the Harness web UI: the expanded sidebar becomes
+    # an overlay drawer, the settings dialog becomes a full-screen tab page,
+    # and the conversation content follows the viewport. The upstream DOM
+    # coupling lives in the package's anchor manifest; see
+    # packages/dsh-desktop-responsive/README.md.
+    - id: dsh-desktop-responsive
+      name: dsh-desktop-responsive
+
     # DSH Desktop owns the fixed-target dsh-market installer and its lightweight
     # settings entry. After dshmarket is installed and Harness restarts, the
     # community plugin replaces the placeholder with its complete market UI.

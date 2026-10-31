@@ -6,8 +6,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/dsh-desktop
-Environment=DSH_HOME=%h/.dsh
+# The unit runs as the account that owns the checkout, so %h resolves to
+# that account's home rather than to /root.
+User=averypi
+Group=averypi
+WorkingDirectory=/home/averypi/dsh-desktop
+Environment=DSH_HOME=/home/averypi/.dsh
 Environment=NODE_ENV=production
 Environment=SHELL=/bin/sh
 # The Harness's outbound traffic goes through the local proxy when one runs.
@@ -17,14 +21,28 @@ Environment=http_proxy=http://127.0.0.1:7890
 Environment=https_proxy=http://127.0.0.1:7890
 # Node's fetch (undici) ignores the proxy variables above, so preload a
 # dispatcher instead. Drop this line when no proxy is needed.
-Environment=NODE_OPTIONS=--import=%h/dsh-desktop/scripts/proxy-fetch-setup.mjs
+Environment=NODE_OPTIONS=--import=/home/averypi/dsh-desktop/scripts/proxy-fetch-setup.mjs
 # --host must be one concrete interface address: the Harness rejects
 # wildcards. Use the LAN address so other devices on the network can reach
 # it, or 127.0.0.1 for loopback-only access.
 # --trusted-host lists every authority the browser may reach; the browser-trust
 # fence rejects any /api request whose Host is not on this list.
-ExecStart=/usr/bin/node %h/dsh-desktop/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host 127.0.0.1 --port 43129 --trusted-host 127.0.0.1:43129
-Restart=on-failure
+#
+# Both values are machine-specific. Override them with a drop-in:
+#   systemctl edit dsh-web.service
+# The bind address and the public hostname are machine-specific. Set them
+# in a drop-in:
+#   systemctl edit dsh-web.service
+#   [Service]
+#   Environment=DSH_BIND=192.168.1.10
+#   Environment=DSH_PUBLIC_HOST=dsh.example.com
+Environment=DSH_BIND=127.0.0.1
+Environment=DSH_PUBLIC_HOST=localhost
+ExecStart=/usr/bin/node /home/averypi/dsh-desktop/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host $DSH_BIND --port 43129 --trusted-host $DSH_BIND:43129 --trusted-host $DSH_PUBLIC_HOST
+# `always`, not `on-failure`: the Harness can exit cleanly on its own, and
+# `on-failure` leaves the unit down in that case — the public URL then
+# answers 502 until someone starts it by hand.
+Restart=always
 RestartSec=5
 # The launch token changes on every restart, and the mobile bridge reads it
 # from this file. Append mode keeps every run's URL line available.

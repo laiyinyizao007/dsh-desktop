@@ -1,7 +1,7 @@
 {
-  "name": "dsh-responsive",
+  "name": "dsh-desktop-responsive",
   "version": "0.1.0",
-  "description": "Phone-width layout for the Harness web UI: the expanded sidebar floats over the content instead of squeezing it.",
+  "description": "DSH Desktop phone-width layout: the expanded sidebar becomes a floating drawer, the settings dialog becomes a full-screen tab page, and the home composer follows the viewport.",
   "private": true,
   "type": "module",
   "main": "./index.js",

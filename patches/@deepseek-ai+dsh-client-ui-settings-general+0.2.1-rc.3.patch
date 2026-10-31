@@ -1,5 +1,5 @@
 diff --git a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
-index 3e0cc49..322b3b2 100644
+index 3e0cc49..a5ad9ac 100644
 --- a/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 +++ b/node_modules/@deepseek-ai/dsh-client-ui-settings-general/lib/client.js
 @@ -63,7 +63,7 @@ window.__ModuleLoader__.load({
@@ -19,15 +19,17 @@ index 3e0cc49..322b3b2 100644
  				role: "presentation",
  				children: [(0, react_jsx_runtime.jsx)("div", {
  					className: SettingsRoot_module_css_default.mask,
-@@ -294,6 +295,7 @@ window.__ModuleLoader__.load({
+@@ -294,14 +295,17 @@ window.__ModuleLoader__.load({
  					"aria-labelledby": titleId,
  					children: [(0, react_jsx_runtime.jsxs)("nav", {
  						className: SettingsRoot_module_css_default.nav,
 +						"data-dsh-region": "settings-nav",
  						children: [(0, react_jsx_runtime.jsx)("div", {
  							className: SettingsRoot_module_css_default.navTitle,
++						"data-dsh-region": "settings-nav-title",
  							id: titleId,
-@@ -302,6 +304,7 @@ window.__ModuleLoader__.load({
+ 							tabIndex: -1,
+ 							"data-modal-autofocus": active === void 0 ? "" : void 0,
  							children: renderSlot("settings.header", {})
  						}), (0, react_jsx_runtime.jsx)("div", {
  							className: SettingsRoot_module_css_default.navList,
@@ -35,7 +37,7 @@ index 3e0cc49..322b3b2 100644
  							children: rows.map((row) => (0, react_jsx_runtime.jsxs)("button", {
  								type: "button",
  								className: clsx(SettingsRoot_module_css_default.navCell, row.id === active && SettingsRoot_module_css_default.active),
-@@ -315,9 +318,13 @@ window.__ModuleLoader__.load({
+@@ -315,9 +319,13 @@ window.__ModuleLoader__.load({
  									children: row.label
  								})]
  							}, row.id))
@@ -49,7 +51,15 @@ index 3e0cc49..322b3b2 100644
  						children: [(0, react_jsx_runtime.jsxs)("div", {
  							className: SettingsRoot_module_css_default.header,
  							children: [(0, react_jsx_runtime.jsx)("div", {
-@@ -360,10 +367,7 @@ window.__ModuleLoader__.load({
+@@ -334,6 +342,7 @@ window.__ModuleLoader__.load({
+ 							})]
+ 						}), (0, react_jsx_runtime.jsx)("div", {
+ 							className: SettingsRoot_module_css_default.options,
++						"data-dsh-region": "settings-options",
+ 							children: active !== void 0 && renderSlot("settings.section", { close: onClose }, { only: active })
+ 						})]
+ 					})]
+@@ -360,10 +369,7 @@ window.__ModuleLoader__.load({
  			const connectionState = useConnectionState((state) => state);
  			const previousConnectionState = (0, react.useRef)(connectionState);
  			const onboardingSteps = useOnboardingSteps((s) => s);
@@ -61,7 +71,7 @@ index 3e0cc49..322b3b2 100644
  			const onboardingStep = requestedOnboarding !== void 0 ? onboardingSteps.find((step) => step.id === requestedOnboarding) : onboardingActive ? onboardingSteps.find((step) => !completedOnboarding.has(step.id)) : void 0;
  			(0, react.useEffect)(() => {
  				if (onboardingActive) return;
-@@ -1253,6 +1257,10 @@ window.__ModuleLoader__.load({
+@@ -1253,6 +1259,10 @@ window.__ModuleLoader__.load({
  							kind: "single",
  							scope: "root"
  						},

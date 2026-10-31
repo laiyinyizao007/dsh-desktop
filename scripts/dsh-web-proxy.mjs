@@ -145,9 +145,24 @@ const server = createServer((clientRequest, clientResponse) => {
       // The Harness redirects to a relative path after the token exchange, so
       // the Location header stays usable behind the proxy.
       clientResponse.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders)
+      // The browser can go away mid-response. An unhandled 'error' on the
+      // socket would take the proxy down with it.
+      clientResponse.on('error', () => {
+        upstreamResponse.destroy()
+      })
+      upstreamResponse.on('error', () => {
+        clientResponse.destroy()
+      })
       upstreamResponse.pipe(clientResponse)
     }
   )
+
+  clientRequest.on('error', () => {
+    upstreamRequest.destroy()
+  })
+  clientResponse.on('error', () => {
+    upstreamRequest.destroy()
+  })
 
   upstreamRequest.on('error', (error) => {
     clientResponse.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
@@ -202,6 +217,20 @@ server.on('upgrade', (clientRequest, clientSocket, clientHead) => {
     )
     if (upstreamHead?.length) clientSocket.unshift(upstreamHead)
     if (clientHead?.length) upstreamSocket.unshift(clientHead)
+
+    // A socket that dies mid-stream emits 'error'. Without a listener Node
+    // treats it as an unhandled 'error' event and takes the whole process
+    // down — a browser that navigates away during the handshake is enough
+    // to kill the proxy, and every page load after that fails.
+    const teardown = () => {
+      clientSocket.destroy()
+      upstreamSocket.destroy()
+    }
+    clientSocket.on('error', teardown)
+    upstreamSocket.on('error', teardown)
+    clientSocket.on('close', () => upstreamSocket.destroy())
+    upstreamSocket.on('close', () => clientSocket.destroy())
+
     upstreamSocket.pipe(clientSocket)
     clientSocket.pipe(upstreamSocket)
   })
@@ -218,7 +247,21 @@ server.on('upgrade', (clientRequest, clientSocket, clientHead) => {
     clientSocket.destroy()
   })
 
+  // The browser can drop the socket before the upstream answers.
+  clientSocket.on('error', () => {
+    upstreamRequest.destroy()
+  })
+
   upstreamRequest.end()
+})
+
+// A socket that dies mid-stream emits 'error'. Without a listener Node treats
+// it as an unhandled 'error' event and takes the process down. That is not
+// hypothetical: a browser that navigates away during the WebSocket
+// handshake produced `Error: write EPIPE`, the proxy died, and every
+// subsequent page load hung on "loading plugins".
+process.on('uncaughtException', (error) => {
+  console.warn(`[proxy] uncaught exception: ${error.message}`)
 })
 
 server.listen(port, '0.0.0.0', () => {

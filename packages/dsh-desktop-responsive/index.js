@@ -1,5 +1,5 @@
 /**
- * `dsh-responsive` — phone-width layout for the Harness web UI.
+ * `dsh-desktop-responsive` — phone-width layout for the Harness web UI.
  *
  * The whole implementation is client-side (see `client.js`): the frame's
  * layout is a browser concern, and the server has nothing to contribute.
@@ -8,7 +8,7 @@
  * loader requires a named export with an `apply` method.
  */
 
-export const name = 'dsh-responsive'
+export const name = 'dsh-desktop-responsive'
 
 export const inject = []
 

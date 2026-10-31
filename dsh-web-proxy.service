@@ -11,14 +11,24 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/dsh-desktop
-Environment=DSH_HOME=%h/.dsh
+User=averypi
+Group=averypi
+WorkingDirectory=/home/averypi/dsh-desktop
+Environment=DSH_HOME=/home/averypi/.dsh
 Environment=SHELL=/bin/sh
-# The upstream Harness address. It must match the --host the Harness binds.
+# The upstream Harness address. It must match the --host the Harness binds,
+# and the Harness rejects a wildcard host — so a deployment that serves other
+# devices binds a concrete interface address and loopback is not listening.
+# Set the real address in a drop-in:
+#   systemctl edit dsh-web-proxy.service
+#   [Service]
+#   Environment=DSH_UPSTREAM=http://192.168.1.10:43129
 Environment=DSH_UPSTREAM=http://127.0.0.1:43129
 Environment=DSH_HARNESS_LOG=/var/log/dsh-web.log
-ExecStart=/usr/bin/node %h/dsh-desktop/scripts/dsh-web-proxy.mjs --port 43128
-Restart=on-failure
+ExecStart=/usr/bin/node /home/averypi/dsh-desktop/scripts/dsh-web-proxy.mjs --port 43128
+# `always`, not `on-failure`: the proxy is expected to exit cleanly on
+# shutdown, and `on-failure` leaves the unit down in that case.
+Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
