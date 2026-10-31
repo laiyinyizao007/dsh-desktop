@@ -416,7 +416,52 @@ and reports what a screenshot alone does not: elements cut off at the right
 edge, text squeezed into a narrow column, and tap targets under 32 px.
 `scripts/look-at-mobile.py` runs the same probe against any other site.
 
-## 10. The profile layer at a glance
+## 10. After changing a plugin
+
+The Harness derives a client bundle's revision from the entry's `mtime`,
+`ctime` and size, and it recomputes those only when it starts or when the
+HMR hook fires. A bundle whose file changed after the Harness started is
+therefore still advertised at its old revision, the browser asks for that
+revision, the request 404s, and the module graph fails with:
+
+```
+Failed to load plugins
+required client modules failed to activate
+```
+
+Restarting the Harness is the fix. The proxy serves the diagnosis:
+
+```bash
+curl -s https://dsh.example.com/healthz
+```
+
+```json
+{
+  "ok": false,
+  "checks": [
+    { "name": "harness", "ok": true, "detail": "launch token present, log written 78s ago" },
+    { "name": "client-bundle-revisions", "ok": false,
+      "detail": "1 bundle(s) changed after the Harness started: dsh-desktop-responsive — restart the Harness" }
+  ],
+  "stale": [{ "id": "dsh-desktop-responsive", "rev": "b74903fc59b4", "modified": "…" }]
+}
+```
+
+`scripts/dsh-rebuild.sh` does the whole thing — regenerate the patch files,
+restart the Harness, wait for it to publish its revisions, and report:
+
+```bash
+scripts/dsh-rebuild.sh              # patch, restart, verify
+scripts/dsh-rebuild.sh --no-patches # restart and verify only
+scripts/dsh-rebuild.sh --check      # report only, change nothing
+```
+
+The client bundles are served with `cache-control: no-store`. A response is
+immutable for a given revision, but the *set* of revisions changes whenever
+a bundle is rebuilt — so a cached `plugins/??…&rev=…` URL can name a
+revision that no longer exists.
+
+## 11. The profile layer at a glance
 
 Everything above lands in the profile's patch layer
 (`$DSH_HOME/profiles/<profile>/cordis.patch.yml`), not in the repository.
