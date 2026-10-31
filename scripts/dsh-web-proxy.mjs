@@ -19,9 +19,10 @@
  * Usage:
  *   node scripts/dsh-web-proxy.mjs [--upstream http://127.0.0.1:43129] [--port 43128]
  */
-import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
@@ -62,6 +63,146 @@ function currentLaunchToken() {
   const matches = [...content.matchAll(/\?token=([A-Za-z0-9_-]+)/g)]
   const last = matches.at(-1)
   return last?.[1]
+}
+
+/** The Harness log, or an empty string when it cannot be read. */
+function readLog() {
+  if (!existsSync(logPath)) return ''
+  try {
+    return readFileSync(logPath, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+/** How long ago the Harness log was last written, in seconds. */
+function logAgeSeconds() {
+  try {
+    return Math.round((Date.now() - statSync(logPath).mtimeMs) / 1000)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * When the Harness process started, in epoch milliseconds.
+ *
+ * The process's own start time is read from /proc, so it is exact and does
+ * not depend on the log's format. A client bundle whose file is newer than
+ * this was edited after the Harness published its revisions, which is the
+ * usual reason a page refuses to mount.
+ */
+function harnessStartedAt() {
+  const pid = harnessPid()
+  if (pid === null) return 0
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    // The start time is field 22, in clock ticks since boot.
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+    const ticks = Number(fields[19])
+    const bootTime = readFileSync('/proc/stat', 'utf8')
+    const match = bootTime.match(/^btime (\d+)$/m)
+    if (!Number.isFinite(ticks) || match === null) return 0
+    const hertz = 100
+    return Number(match[1]) * 1000 + (ticks / hertz) * 1000
+  } catch {
+    return 0
+  }
+}
+
+/** The PID of the running Harness, if it can be found. */
+function harnessPid() {
+  const proc = process.env.DSH_HARNESS_PID
+  if (proc !== undefined && /^[0-9]+$/.test(proc)) return Number(proc)
+  try {
+    for (const entry of readdirSync('/proc')) {
+      if (!/^[0-9]+$/.test(entry)) continue
+      let cmd
+      try {
+        cmd = readFileSync(`/proc/${entry}/cmdline`, 'utf8')
+      } catch {
+        continue
+      }
+      if (cmd.includes('dsh') && cmd.includes('web') && cmd.includes('43129')) {
+        return Number(entry)
+      }
+    }
+  } catch {
+    // ignored
+  }
+  return null
+}
+
+/** The Profile's own node_modules, where local plugin links live. */
+function profileModules() {
+  const home = process.env.DSH_HOME ?? join(process.env.HOME ?? '/home/averypi', '.dsh')
+  const candidate = join(home, 'profiles', 'web', 'node_modules')
+  return existsSync(candidate) ? candidate : null
+}
+
+/** The repository's node_modules, where the Desktop host plugins live. */
+function repoModules() {
+  const candidate = join(process.env.DSH_REPO ?? process.cwd(), 'node_modules')
+  return existsSync(candidate) ? candidate : null
+}
+
+/**
+ * The Harness root page, which carries the advertised module graph.
+ *
+ * Synchronous on purpose: the diagnosis runs inside a request handler and
+ * has to answer before the response is written.
+ */
+function rootHtml() {
+  const token = currentLaunchToken()
+  if (token === undefined) return null
+  const url = new URL(upstream.origin)
+  const script = `
+    const http = require('node:http')
+    const token = ${JSON.stringify(token)}
+    const origin = { hostname: ${JSON.stringify(url.hostname)}, port: ${Number(url.port || 80)} }
+    // The Harness answers a root request that carries the launch token with
+    // a 303 to "./" and a session cookie. The redirect therefore has to be
+    // followed *with* that cookie, or the second request is a 401.
+    let cookie = ''
+    const fetchRoot = (path, redirects) => {
+      const headers = { host: origin.hostname + ':' + origin.port }
+      if (cookie !== '') headers.cookie = cookie
+      const request = http.request({ ...origin, path, method: 'GET', headers }, (response) => {
+        const setCookie = response.headers['set-cookie']
+        if (Array.isArray(setCookie)) {
+          for (const entry of setCookie) {
+            const pair = entry.split(';')[0]
+            if (pair.startsWith('dsh-auth-')) cookie = pair
+          }
+        }
+        const location = response.headers.location
+        if (response.statusCode >= 300 && response.statusCode < 400 && location && redirects > 0) {
+          response.resume()
+          // The Harness redirects to a *relative* "./", which resolves
+          // against the request path, not the origin.
+          const target = new URL(location, 'http://' + origin.hostname + ':' + origin.port + path)
+          fetchRoot(target.pathname + target.search, redirects - 1)
+          return
+        }
+        let body = ''
+        response.setEncoding('utf8')
+        response.on('data', (chunk) => { body += chunk })
+        response.on('end', () => { process.stdout.write(body) })
+      })
+      request.on('error', () => {})
+      request.end()
+    }
+    fetchRoot('/?token=' + encodeURIComponent(token), 3)
+  `
+  try {
+    return execFileSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      timeout: 8000,
+      maxBuffer: 32 * 1024 * 1024
+    })
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -121,8 +262,106 @@ function hasSessionCookie(headers) {
   return cookie.split(';').some((segment) => segment.trim().startsWith('dsh-auth-'))
 }
 
+/**
+ * A diagnosis page, served by the proxy rather than the Harness.
+ *
+ * The question this answers is "why does the page not load?", and the usual
+ * answer is one of two things that look identical from the outside: the
+ * browser holds a stale client-bundle revision, or the Harness is not
+ * running. The proxy can tell them apart — it reads the launch token from
+ * the Harness log and can compare the served bundle revisions against the
+ * files on disk.
+ */
+function diagnose() {
+  const token = currentLaunchToken()
+  const age = logAgeSeconds()
+
+  const checks = []
+  checks.push({
+    name: 'harness',
+    ok: token !== undefined,
+    detail:
+      token === undefined
+        ? 'no launch token in the log — the Harness is not running'
+        : `launch token present, log written ${age}s ago`
+  })
+
+  // The Harness derives a client bundle's revision from the entry's mtime,
+  // ctime and size. A revision it no longer knows returns 404, and the
+  // module graph then fails with "required client modules failed to
+  // activate" — so a bundle whose file changed after the Harness started is
+  // the single most common cause of a page that will not mount.
+  const stale = []
+  const startedAt = harnessStartedAt()
+  for (const [id, revision] of advertisedRevisions()) {
+    const file = clientEntryPath(id)
+    if (file === null) continue
+    let mtimeMs
+    try {
+      mtimeMs = statSync(file).mtimeMs
+    } catch {
+      continue
+    }
+    if (mtimeMs > startedAt) {
+      stale.push({ id, revision, modified: new Date(mtimeMs).toISOString() })
+    }
+  }
+  checks.push({
+    name: 'client-bundle-revisions',
+    ok: stale.length === 0,
+    detail:
+      stale.length === 0
+        ? 'every bundle matches its advertised revision'
+        : `${stale.length} bundle(s) changed after the Harness started: ${stale
+            .map((entry) => entry.id)
+            .join(', ')} — restart the Harness`
+  })
+
+  return {
+    ok: checks.every((check) => check.ok),
+    checks,
+    stale,
+    note: 'A stale revision is fixed by restarting the Harness service; the browser cache is not the problem in that case.'
+  }
+}
+
+/** The revision the Harness advertises for each client bundle. */
+function advertisedRevisions() {
+  const revisions = new Map()
+  const html = rootHtml()
+  if (html === null) return revisions
+  const pattern = /\{"id":"([^"]+)","url":"([^"]+)"[^}]*?"rev":"([^"]+)"/g
+  let match
+  while ((match = pattern.exec(html)) !== null) {
+    revisions.set(match[1], match[3])
+  }
+  return revisions
+}
+
+/** Where a client bundle's entry lives, if it is a local package. */
+function clientEntryPath(id) {
+  for (const root of [profileModules(), repoModules()]) {
+    if (root === null) continue
+    const candidate = join(root, id, 'client.js')
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
 const server = createServer((clientRequest, clientResponse) => {
-  const target = rewriteUrl(clientRequest.url ?? '/', hasSessionCookie(clientRequest.headers))
+  const requestUrl = clientRequest.url ?? '/'
+
+  if (requestUrl === '/healthz' || requestUrl === '/healthz/') {
+    const report = diagnose()
+    clientResponse.writeHead(report.ok ? 200 : 503, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store'
+    })
+    clientResponse.end(`${JSON.stringify(report, null, 2)}\n`)
+    return
+  }
+
+  const target = rewriteUrl(requestUrl, hasSessionCookie(clientRequest.headers))
   const headers = { ...clientRequest.headers }
   // The Harness signs its session cookie against the request authority, so the
   // Host header has to stay the one the browser used. Rewriting it to the
@@ -144,6 +383,18 @@ const server = createServer((clientRequest, clientResponse) => {
       const responseHeaders = { ...upstreamResponse.headers }
       // The Harness redirects to a relative path after the token exchange, so
       // the Location header stays usable behind the proxy.
+      //
+      // The client bundles carry their revision in the query string, and the
+      // Harness derives it from the file's mtime, ctime and size. A browser
+      // that kept an old `plugins/??…&rev=…` URL therefore asks for a
+      // revision the server no longer has, the request 404s, and the module
+      // graph fails with "required client modules failed to activate". The
+      // response is immutable for a given revision, but the *set* of
+      // revisions changes whenever a bundle is rebuilt — so these must not be
+      // cached by the browser.
+      if (target.path.startsWith('/plugins/')) {
+        responseHeaders['cache-control'] = 'no-store, must-revalidate'
+      }
       clientResponse.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders)
       // The browser can go away mid-response. An unhandled 'error' on the
       // socket would take the proxy down with it.

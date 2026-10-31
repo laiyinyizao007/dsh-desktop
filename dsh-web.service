@@ -38,7 +38,10 @@ Environment=NODE_OPTIONS=--import=/home/averypi/dsh-desktop/scripts/proxy-fetch-
 #   Environment=DSH_PUBLIC_HOST=dsh.example.com
 Environment=DSH_BIND=127.0.0.1
 Environment=DSH_PUBLIC_HOST=localhost
-ExecStart=/usr/bin/node /home/averypi/dsh-desktop/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host $DSH_BIND --port 43129 --trusted-host $DSH_BIND:43129 --trusted-host $DSH_PUBLIC_HOST
+# `${DSH_BIND}:43129` needs the braces: systemd expands a bare `$DSH_BIND:43129`
+# as one invalid reference and drops the whole token, which silently removes the
+# bind address from --trusted-host.
+ExecStart=/usr/bin/node /home/averypi/dsh-desktop/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host $DSH_BIND --port 43129 --trusted-host ${DSH_BIND}:43129 --trusted-host $DSH_PUBLIC_HOST
 # `always`, not `on-failure`: the Harness can exit cleanly on its own, and
 # `on-failure` leaves the unit down in that case — the public URL then
 # answers 502 until someone starts it by hand.
