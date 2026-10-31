@@ -183,7 +183,69 @@ packaged Desktop points at its own resources directory.
 
 ---
 
-## 4. A bookmarkable public URL
+## 4. The plugin market
+
+Upstream Desktop mounts the community market through a separate patch layer
+(`build/dsh-desktop-market.patch.yml`):
+
+```yaml
+- id: dsh-market
+  inject: [desktopProfiles]
+  config:
+    profile: web
+    allowRestart: false
+```
+
+That row is **not a dependency** — it is a "this runs under Desktop" gate.
+`desktopProfiles` is a service of the Electron shell, so the market never
+activates on a web profile. The market package itself never references it;
+`Inject.resolve` simply leaves the plugin inactive when a named service is
+absent.
+
+Dropping the `inject` row mounts the market on a web profile. Both halves
+are needed:
+
+```yaml
+- insert:
+    - id: dsh-market
+      name: "@deepseek-ai/dsh-plugin-market"
+      config:
+        indexes:
+          - https://dshmarket.com/index.json
+
+- insert:
+    - id: ui-plugin-market
+      name: "@deepseek-ai/dsh-client-ui-plugin-market"
+```
+
+The first row is the Host half. The second is the browser half, and it is
+mounted the same way the web profile mounts `dsh-client-ui-plugin-manager`:
+as an insert row. Neither declares `dsh.bundle`, so neither can be listed
+as a profile bundle — the loader refuses a bundle whose package declares
+nothing:
+
+```
+Error: dsh: profile bundle "…" declares no dsh.bundle in its package.json
+```
+
+### Two different catalogs
+
+Two separate services serve catalogs, and they use different formats:
+
+| URL | Format | Serves |
+|---|---|---|
+| `market.dshdesktop.com/index.json` | `kind: "catalog"`, schemaVersion 2 | the **workbench** catalog, read by `dsh-desktop-workbenches` |
+| `dshmarket.com/index.json` | `format: 1` | the **plugin market** index, read by `dsh-market` |
+
+Feeding the workbench catalog to the market fails validation with
+`此索引的格式无效` — the market wants format 1, whose entries carry
+`versions[]`, `packageName` and a commit hash.
+
+The market index is about 2.8 MB, and a slow link can truncate it. A
+truncated download fails JSON parsing, and the UI reports the index as
+invalid rather than as a network problem.
+
+## 5. A bookmarkable public URL
 
 `dsh web` authenticates every request with the launch token, so a public URL
 cannot just point at it — the visitor would need a fresh token after every
@@ -227,7 +289,7 @@ reads the token from the log on every request, so it survives on its own.
 
 ---
 
-## 5. Phone access
+## 6. Phone access
 
 `src/main/mobile/lan-mobile-bridge.ts` is a **PIN-paired HTTP + WebSocket
 bridge with no Electron imports** — plain Node. Upstream the Electron main
@@ -289,7 +351,7 @@ proxy instead.
 
 ---
 
-## 6. Model configuration
+## 7. Model configuration
 
 `llm-pi-ai` routes to any provider in the pi-ai catalog, which already
 ships MiniMax:
@@ -315,7 +377,7 @@ answers `Config field "x" is not volatile`. Set them in the UI.
 
 ---
 
-## 7. Calling the Harness directly
+## 8. Calling the Harness directly
 
 `POST /api/<endpoint>` with:
 
@@ -334,7 +396,7 @@ Three rules:
 
 ---
 
-## 8. Verify with a real browser
+## 9. Verify with a real browser
 
 `curl` proves the HTML and the bundles load. It does **not** prove the client
 mounted, and it cannot see a WebSocket that never opened.
@@ -348,3 +410,69 @@ Both drive Chromium through Playwright, print the console errors and the
 failed requests, and dump the visible text — the sidebar list (New Session /
 Workbenches / Plugins / Workspaces / Settings) is the fastest check that the
 UI actually mounted.
+
+`scripts/dsh-page-audit.py` walks the UI page by page at a phone viewport
+and reports what a screenshot alone does not: elements cut off at the right
+edge, text squeezed into a narrow column, and tap targets under 32 px.
+`scripts/look-at-mobile.py` runs the same probe against any other site.
+
+## 10. The profile layer at a glance
+
+Everything above lands in the profile's patch layer
+(`$DSH_HOME/profiles/<profile>/cordis.patch.yml`), not in the repository.
+That is deliberate: the file survives a Harness upgrade, because upstream
+does not own it. The rows a Linux web profile typically carries:
+
+```yaml
+# Model provider (MiniMax-M3 through the pi-ai catalog)
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      minimax-cn:
+        apiKeyEnv: MINIMAX_CN_API_KEY
+        models:
+          - id: MiniMax-M3
+            contextWindow: 1000000
+
+# Default model
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: minimax-cn
+    model: MiniMax-M3
+    reasoningEffort: high
+
+# The Desktop host plugins (see section 3)
+- id: ui-brand-official
+  disabled: true
+- insert:
+    - id: dsh-desktop-client-ui
+      name: dsh-desktop-client-ui
+    - id: dsh-desktop-workbenches
+      name: dsh-desktop-workbenches
+      config:
+        root: !!js dshHomePath('desktop-workbenches')
+    - id: dsh-desktop-market-installer
+      name: dsh-desktop-market-installer
+
+# The plugin market (see section 4)
+- insert:
+    - id: dsh-market
+      name: "@deepseek-ai/dsh-plugin-market"
+      config:
+        indexes:
+          - https://dshmarket.com/index.json
+    - id: ui-plugin-market
+      name: "@deepseek-ai/dsh-client-ui-plugin-market"
+```
+
+The API key itself lives in the credential store, not in the patch:
+
+```bash
+python3 scripts/dsh-rpc.py credentials/set \
+  '{"ref":"MINIMAX_CN_API_KEY","value":"sk-..."}'
+```
+
+`apiKeyEnv` resolves as a credential ref first and an environment variable
+second, so the key never has to appear in the patch file.
