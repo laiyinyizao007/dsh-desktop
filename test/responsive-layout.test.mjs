@@ -95,6 +95,12 @@ describe('the anchor manifest', () => {
   it('names the package and the origin of every anchor', () => {
     for (const [key, anchor] of Object.entries(anchors)) {
       expect(anchor.package, `${key} has no upstream package`).toBeTruthy()
+      if (anchor.optional === true) {
+        // A surface that belongs to another plugin: it is not upstream, so
+        // there is no upstream package to name, and the surface may be
+        // absent entirely.
+        continue
+      }
       expect(
         UPSTREAM_FILES[anchor.package],
         `${key} names an unknown upstream package: ${anchor.package}`
@@ -120,6 +126,7 @@ describe('the anchor manifest', () => {
 
   it('has every anchor present in the installed upstream source', async () => {
     for (const [key, anchor] of Object.entries(anchors)) {
+      if (anchor.optional === true) continue
       const source = await upstreamSource(anchor.package)
       if (anchor.origin === 'marker') {
         const marker = markerValue(anchor.selector)
@@ -263,7 +270,11 @@ describe('the upstream patches', () => {
     // version, but only with a warning. Renaming the file is mechanical,
     // so the drift is caught here instead of in a build log.
     const anchors = await loadManifest()
-    const packages = new Set(Object.values(anchors).map(anchor => anchor.package))
+    const packages = new Set(
+      Object.values(anchors)
+        .filter(anchor => anchor.optional !== true)
+        .map(anchor => anchor.package)
+    )
     for (const pkg of packages) {
       const manifest = JSON.parse(
         await readFile(join(repoRoot, 'node_modules', pkg, 'package.json'), 'utf8')

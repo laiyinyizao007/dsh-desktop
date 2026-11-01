@@ -73,18 +73,33 @@ async function activatePlugin() {
  * window's size, so only the visual viewport knows. The stub replaces it
  * with one that reports a different size.
  */
-function stubVisualViewport({ width, height, scale = 1, offsetTop = 0 }) {
+const viewport = new EventTarget()
+viewport.width = 390
+viewport.height = 800
+viewport.scale = 1
+viewport.offsetTop = 0
+
+/**
+ * Point the window at the shared visual viewport.
+ *
+ * The plugin takes hold of the viewport when it installs, so the object
+ * has to be the same one for the whole file: a test changes the numbers
+ * on it and the plugin sees the change.
+ */
+function installVisualViewport() {
   Object.defineProperty(window, 'visualViewport', {
-    value: {
-      width,
-      height,
-      scale,
-      offsetTop,
-      addEventListener() {},
-      removeEventListener() {},
-    },
+    value: viewport,
     configurable: true,
   })
+}
+
+/** Change the viewport's numbers, the way a keyboard would. */
+function stubVisualViewport({ width, height, scale = 1, offsetTop = 0 }) {
+  viewport.width = width
+  viewport.height = height
+  viewport.scale = scale
+  viewport.offsetTop = offsetTop
+  viewport.dispatchEvent(new Event('resize'))
 }
 
 /** Let the MutationObserver callbacks run. */
@@ -241,6 +256,13 @@ describe('dsh-desktop-responsive client', () => {
   let plugin = null
 
   beforeEach(async () => {
+    installVisualViewport()
+    // The default is a viewport that agrees with the window, which is what
+    // a desktop browser reports.
+    viewport.width = window.innerWidth
+    viewport.height = window.innerHeight
+    viewport.scale = 1
+    viewport.offsetTop = 0
     plugin = await activatePlugin()
   })
 
@@ -850,6 +872,60 @@ describe('dsh-desktop-responsive client', () => {
     // in another pair is not a selector at all: the browser drops the rule
     // and the style silently stops applying.
     expect(css).not.toMatch(/\[\[[^\]]+\]\]/)
+  })
+
+  it('ignores a visual viewport that is too small to be a keyboard', async () => {
+    // A web view can report a viewport that never settled. A phone's
+    // keyboard never covers more than half the screen, so anything below
+    // that is not a keyboard and the shell keeps the window's height.
+    stubVisualViewport({ width: 390, height: 120 })
+    await activatePlugin()
+    await flush()
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--dsh-visual-height')).toBe(`${window.innerHeight}px`)
+  })
+
+  it('follows a visual viewport that a keyboard could explain', async () => {
+    stubVisualViewport({ width: 390, height: 500 })
+    await activatePlugin()
+    await flush()
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--dsh-visual-height')).toBe('500px')
+  })
+
+  it('takes the bottom workbench drag handle away on a phone', async () => {
+    // The bottom panel is a desktop workbench. On a phone it sits below the
+    // fold, but its resize handle stays on the screen and can be dragged.
+    buildFrame({ width: 390, collapsed: true })
+    const panel = document.createElement('div')
+    panel.setAttribute('data-dsh-bottom-panel', '')
+    const handle = document.createElement('div')
+    handle.style.cursor = 'row-resize'
+    panel.appendChild(handle)
+    document.body.appendChild(panel)
+    await flush()
+    expect(handle.getAttribute('data-dshr-no-drag')).toBe('')
+    // A wide window keeps the drag.
+    buildFrame({ width: 1280 })
+    document.body.appendChild(panel)
+    await flush()
+    expect(handle.hasAttribute('data-dshr-no-drag')).toBe(false)
+  })
+
+  it('makes the bottom workbench a full-screen overlay on a phone', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const css = style.textContent
+    // The workbench is a band along the bottom of a desktop window. On a
+    // phone it covers the screen, which also settles the gap the band
+    // left between the conversation and the panel.
+    expect(css).toMatch(
+      /data-dshr-mode='phone'\] \[data-dsh-bottom-panel\][^{]*\{[^}]*height: 100%/
+    )
+    // The layer the panel is mounted in decides what the panel's own
+    // z-index is measured against, so it has to clear the plugin's own
+    // floating controls.
+    expect(css).toMatch(/data-dshr-panel-layer\][^{]*\{[^}]*z-index: 46/)
   })
 
   it('injects its stylesheet exactly once', async () => {

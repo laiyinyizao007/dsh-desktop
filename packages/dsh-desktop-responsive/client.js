@@ -79,8 +79,18 @@ window.__ModuleLoader__.load({
      */
     const VERIFY_INTERVAL_MS = 1000
 
+    /** The attribute that carries the measured viewport, for diagnosis. */
+    const VIEWPORT_ATTR = 'data-dshr-viewport'
 
-
+    /**
+     * The smallest share of the window that a visual viewport may claim.
+     *
+     * A phone's keyboard covers at most half the screen, so a visual
+     * viewport below this share is not a keyboard — it is a web view that
+     * reports a viewport which never settled, or one that was measured
+     * while a sheet was open.
+     */
+    const VIEWPORT_FLOOR = 0.4
 
     /** The locale namespace this plugin's own strings live in. */
     const NS = 'desktop-responsive'
@@ -140,7 +150,11 @@ window.__ModuleLoader__.load({
     /** The attribute that marks a table container as overflowing. */
     const TABLE_OVERFLOW_ATTR = 'data-dshr-overflow'
 
+    /** The attribute of a control the plugin has taken over. */
+    const NO_DRAG_ATTR = 'data-dshr-no-drag'
 
+    /** The attribute of the layer that holds the bottom workbench. */
+    const PANEL_LAYER_ATTR = 'data-dshr-panel-layer'
 
     /** The attribute of the strip holding the plugin's own actions. */
     const ACTION_STRIP_ATTR = 'data-dshr-action-strip'
@@ -236,6 +250,15 @@ window.__ModuleLoader__.load({
         origin: 'marker',
         package: '@deepseek-ai/dsh-client-ui-sidebar',
         surface: 'frame',
+      },
+      bottomPanel: {
+        // The bottom workbench of the better-sidebar plugin. It is not
+        // part of every deployment, so it is an optional anchor: the
+        // plugin is absent on a host without it.
+        selector: '[data-dsh-bottom-panel]',
+        origin: 'attribute',
+        package: 'dsh-better-sidebar',
+        optional: true,
       },
       titleRow: {
         // The row's height follows its content — a session with a running
@@ -903,6 +926,41 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   height: 28px !important;
 }
 
+/* The bottom workbench on a phone.
+   The panel is a desktop workbench: it is a band along the bottom of a
+   two-column window, and on a phone that band is a fraction of the screen
+   with a file tree squeezed into it.
+
+   It becomes a full-screen overlay instead. That also settles the gap the
+   panel used to leave: the layout pushes the columns down by the height it
+   reserves for the panel, while the panel itself is drawn at a height that
+   includes the keyboard's inset — so the two disagreed, and the difference
+   showed as a bare band above the panel. Covering the screen leaves nothing
+   to disagree about. */
+:root[data-dshr-mode='phone'] ${A.bottomPanel} {
+  top: 0 !important;
+  bottom: 0 !important;
+  height: 100% !important;
+  z-index: 45 !important;
+}
+
+/* The layer the workbench is mounted in. It is what the panel's own
+   z-index is measured against, so the layer has to clear the plugin's own
+   floating controls. */
+:root[data-dshr-mode='phone'] [${PANEL_LAYER_ATTR}] {
+  z-index: 46 !important;
+}
+
+/* The workbench covers the screen, so the plugin's own floating controls
+   stay below it: the workbench has its own close button, and a menu
+   button showing through its tab bar would only be in the way. */
+
+/* A control the plugin has taken over: it no longer takes the pointer. */
+[${NO_DRAG_ATTR}] {
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
 /* The strip holding the items other plugins registered. It sits at the
    right of the menu, and the upstream containers move aside for it: the
    plugin publishes its width as --dsh-actions-extra. */
@@ -1118,11 +1176,18 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (zoomed || vv === undefined || vv === null) {
           return { width: window.innerWidth, height: window.innerHeight }
         }
+        const width = Math.min(Math.round(vv.width), window.innerWidth)
+        const height = Math.round(vv.height)
+        // A visual viewport that is a fraction of the window's is not a
+        // keyboard: on a phone the keyboard never covers more than half the
+        // screen, and a web view can report a viewport that never settles.
+        // Trusting such a number would leave the shell a third of the screen
+        // tall, with the rest of the page bare.
+        const floor = Math.round(window.innerHeight * VIEWPORT_FLOOR)
         return {
-          width: Math.min(Math.round(vv.width), window.innerWidth),
-          height: Math.min(Math.round(vv.height), window.innerHeight),
+          width,
+          height: height < floor ? window.innerHeight : Math.min(height, window.innerHeight),
         }
-
       }
 
       /**
@@ -1147,6 +1212,15 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         root.style.setProperty('--dsh-visual-width', `${width}px`)
         root.style.setProperty('--dsh-visual-height', `${height}px`)
         root.style.setProperty('--dsh-visual-offset', `${visibleOffset()}px`)
+        // What the page measured, in a form a device can be asked for: the
+        // numbers are also on the root, so a report of a wrong layout can
+        // say what the plugin saw.
+        const vv = window.visualViewport
+        root.setAttribute(
+          VIEWPORT_ATTR,
+          `${width}x${height}/${window.innerWidth}x${window.innerHeight}` +
+            (vv !== undefined && vv !== null ? `/${Math.round(vv.height)}` : '')
+        )
       }
 
       /**
@@ -1517,6 +1591,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         syncFloatingControls()
         syncContentScale()
         syncHeaderCentre()
+        syncBottomPanel(currentMode)
         syncActions(currentMode)
         auditAnchors()
         verifyLayout()
@@ -1528,6 +1603,46 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * The button replaces the rail's own toggle, so it is only useful
        * where the rail actually took space.
        */
+      /**
+       * Take the bottom workbench's drag handle away on a phone.
+       *
+       * The bottom panel is a desktop workbench. On a phone it sits below
+       * the fold, translated out of the way — but its resize handle is
+       * drawn four pixels above the panel's own edge, so a strip of it
+       * stays on the screen and can be dragged up.
+       *
+       * The handle carries no attribute of its own, so it is found by the
+       * one thing that says what it is: it is the only control in the
+       * panel that offers a row-resize cursor. A plugin that changes that
+       * leaves the handle alone, which is a drag that still works rather
+       * than a broken panel.
+       */
+      function syncBottomPanel(currentMode) {
+        const panel = document.querySelector(A.bottomPanel)
+        if (panel === null) return
+        if (currentMode !== 'phone') {
+          for (const el of panel.querySelectorAll(`[${NO_DRAG_ATTR}]`)) {
+            el.removeAttribute(NO_DRAG_ATTR)
+          }
+          return
+        }
+        // The handle is the panel's first child, and it says what it is
+        // with a row-resize cursor. Both have to hold before the plugin
+        // touches it: a panel that grows a header would otherwise lose it.
+        // The panel sits in a fixed layer of its own, and that layer is
+        // what decides whether the panel is above the plugin's own
+        // floating controls. The layer carries no attribute, so the plugin
+        // marks the one it belongs to.
+        const layer = panel.parentElement
+        if (layer !== null && layer !== undefined) {
+          layer.setAttribute(PANEL_LAYER_ATTR, '')
+        }
+        const handle = panel.firstElementChild
+        if (handle === null) return
+        if (getComputedStyle(handle).cursor !== 'row-resize') return
+        handle.setAttribute(NO_DRAG_ATTR, '')
+      }
+
       /**
        * Watch the registrations other plugins make.
        *
@@ -2118,6 +2233,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 
       window.addEventListener('resize', onResize)
       window.addEventListener('orientationchange', onResize)
+      // The keyboard closes after the field gives up the focus, and the
+      // visual viewport only reports the restored size a moment later.
+      document.addEventListener('focusout', () => {
+        window.setTimeout(() => {
+          syncViewport()
+          sync()
+        }, 120)
+      }, true)
       document.addEventListener('keydown', onKeyDown, true)
       document.addEventListener('pointerdown', onDocumentPointerDown, true)
       document.addEventListener('keydown', onTab, true)
@@ -2213,7 +2336,13 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       // The layout check runs on a timer: a conversation re-renders on
       // every streamed token, and measuring on every mutation would cost
       // more than the check is worth.
-      const verifyTimer = setInterval(() => verifyLayout(), VERIFY_INTERVAL_MS)
+      const verifyTimer = setInterval(() => {
+        verifyLayout()
+        // The visual viewport is the only source for the keyboard, and a
+        // web view does not always say when it changed. Measuring again
+        // costs nothing and lets a stale number correct itself.
+        syncViewport()
+      }, VERIFY_INTERVAL_MS)
 
       return () => {
         state.disposed = true

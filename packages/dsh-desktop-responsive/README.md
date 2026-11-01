@@ -44,6 +44,25 @@ left. The plugin publishes it as `--dsh-visual-width` and
 the visual viewport and the window size is used on each axis, so the shell
 never grows past the layout viewport when a browser bar retracts.
 
+A visual viewport that is **too small to be a keyboard** is ignored. A
+phone's keyboard never covers more than half the screen, so anything below
+that share is not a keyboard: it is a web view reporting a viewport that
+never settled, or one measured while a sheet was open. Trusting such a
+number would leave the shell a third of the screen tall, with the rest of
+the page bare.
+
+The measurement is also repeated on a timer and after the focused field
+gives up the focus, because a web view does not always say when the
+viewport changed, and the keyboard restores the visible size a moment
+after the field loses the focus.
+
+What the plugin measured is published on the root as
+`data-dshr-viewport`, as `published/window/viewport`. A device that shows a
+wrong layout can be asked what the plugin saw:
+
+```js
+document.documentElement.getAttribute('data-dshr-viewport')
+```
 
 A pinch-zoom is not a smaller screen: the visual viewport shrinks when the
 user zooms in, and re-laying out the shell then would fight the zoom, so the
@@ -199,6 +218,35 @@ The strip publishes its width as `--dsh-actions-extra`, and the upstream
 containers move aside for it — so the menu stays one row however many items
 are in it.
 
+## The bottom workbench's handle
+
+The bottom panel of the better-sidebar plugin is a desktop workbench. On a
+phone it sits below the fold, translated out of the way — but its resize
+handle is drawn four pixels above the panel's own edge, so a strip of it
+stays on the screen and can be dragged up.
+
+On a phone the plugin takes that handle away: it stops taking the pointer
+and no longer offers a resize cursor. A wide window keeps the drag.
+
+The workbench itself is a band along the bottom of a desktop window, and
+on a phone it becomes a **full-screen overlay** instead — a file tree in a
+band a third of the screen tall is no use to anybody.
+
+That also settles the gap the band used to leave. The layout pushes the
+columns down by the height it reserves for the panel, while the panel
+itself is drawn at a height that includes the keyboard's inset, so the two
+disagreed and the difference showed as a bare band above the panel. A
+screen-filling panel leaves nothing to disagree about.
+
+The panel is mounted in a fixed layer of its own, and that layer is what
+the panel's z-index is measured against — so the plugin marks the layer and
+raises it above its own floating controls, which would otherwise show
+through the panel's tab bar.
+
+The handle carries no attribute of its own, so it is found through the one
+thing that says what it is — it is the panel's first child and it offers a
+row-resize cursor. Both have to hold before the plugin touches it, so a
+panel that grows a header is left alone.
 
 ## Reading comfort
 
