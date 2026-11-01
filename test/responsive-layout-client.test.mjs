@@ -29,9 +29,16 @@ async function activatePlugin() {
   const exports = captured.factory()
   const disposers = []
   const dictionaries = new Map()
+  const services = new Map()
   exports.apply({
     effect(body) {
       disposers.push(body())
+    },
+    provide(name, service) {
+      services.set(name, service)
+    },
+    get(name) {
+      return services.get(name)
     },
     locale: {
       register(namespace, dictionary) {
@@ -52,6 +59,7 @@ async function activatePlugin() {
   return {
     anchors: exports.anchors,
     phoneMax: exports.phoneMax,
+    services,
     dispose() {
       for (const dispose of disposers.reverse()) dispose?.()
     },
@@ -801,6 +809,21 @@ describe('dsh-desktop-responsive client', () => {
     row.getBoundingClientRect = () => ({ y: 10, height: 34, top: 10, bottom: 44, width: 280, left: 20, right: 300 })
     await flush()
     expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
+  })
+
+  it('writes every plugin attribute selector with its brackets', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // A selector without its brackets is not a selector: the browser drops
+    // the whole rule and the attribute silently stops matching. Comments
+    // are skipped — they talk about the attributes in prose.
+    const css = style.textContent.replace(/\/\*[\s\S]*?\*\//g, '')
+    const bare = css.match(/(^|[^\[])\bdata-dshr-[a-z-]+/g) || []
+    expect(bare).toEqual([])
+    // An anchor's selector already carries its own brackets, so wrapping it
+    // in another pair is not a selector at all: the browser drops the rule
+    // and the style silently stops applying.
+    expect(css).not.toMatch(/\[\[[^\]]+\]\]/)
   })
 
   it('injects its stylesheet exactly once', async () => {

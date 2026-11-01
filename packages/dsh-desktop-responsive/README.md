@@ -44,6 +44,7 @@ left. The plugin publishes it as `--dsh-visual-width` and
 the visual viewport and the window size is used on each axis, so the shell
 never grows past the layout viewport when a browser bar retracts.
 
+
 A pinch-zoom is not a smaller screen: the visual viewport shrinks when the
 user zooms in, and re-laying out the shell then would fight the zoom, so the
 layout viewport is used instead.

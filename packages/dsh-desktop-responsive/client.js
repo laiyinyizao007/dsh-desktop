@@ -79,6 +79,9 @@ window.__ModuleLoader__.load({
      */
     const VERIFY_INTERVAL_MS = 1000
 
+
+
+
     /** The locale namespace this plugin's own strings live in. */
     const NS = 'desktop-responsive'
 
@@ -136,6 +139,10 @@ window.__ModuleLoader__.load({
 
     /** The attribute that marks a table container as overflowing. */
     const TABLE_OVERFLOW_ATTR = 'data-dshr-overflow'
+
+
+
+
 
     /** The attribute of the button that opens the header's actions. */
     const ACTIONS_ATTR = 'data-dshr-actions'
@@ -400,7 +407,7 @@ window.__ModuleLoader__.load({
 
 /* The scrim behind the drawer. It is a real element, not a pseudo-element,
    so it can take the click that dismisses the drawer. */
-${SCRIM_ATTR} {
+[${SCRIM_ATTR}] {
   position: fixed !important;
   inset: 0 !important;
   z-index: 39 !important;
@@ -410,7 +417,7 @@ ${SCRIM_ATTR} {
   transition: opacity 200ms ease !important;
 }
 
-${SCRIM_ATTR}[data-dshr-scrim-open='true'] {
+[${SCRIM_ATTR}][data-dshr-scrim-open='true'] {
   opacity: 1 !important;
   pointer-events: auto !important;
 }
@@ -549,7 +556,7 @@ ${SCRIM_ATTR}[data-dshr-scrim-open='true'] {
   background: var(--dsw-alias-border-l2) !important;
 }
 
-${SHEET_BACKDROP_ATTR} {
+[${SHEET_BACKDROP_ATTR}] {
   position: fixed !important;
   inset: 0 !important;
   z-index: 1199 !important;
@@ -559,7 +566,7 @@ ${SHEET_BACKDROP_ATTR} {
   transition: opacity 200ms ease !important;
 }
 
-${SHEET_BACKDROP_ATTR}[data-dshr-sheet-open='true'] {
+[${SHEET_BACKDROP_ATTR}][data-dshr-sheet-open='true'] {
   opacity: 1 !important;
   pointer-events: auto !important;
 }
@@ -895,6 +902,13 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   height: 28px !important;
 }
 
+[${TABS_TOGGLE_ATTR}] svg,
+[${ACTIONS_ATTR}] svg {
+  width: 16px !important;
+  height: 16px !important;
+  display: block !important;
+}
+
 /* The button that opens the header's collapsed actions. */
 [${ACTIONS_ATTR}] {
   top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
@@ -930,8 +944,10 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 }
 
 [${MENU_ATTR}] svg {
-  width: 18px !important;
-  height: 18px !important;
+[${TABS_TOGGLE_ATTR}] svg,
+[${ACTIONS_ATTR}] svg {
+  width: 16px !important;
+  height: 16px !important;
   display: block !important;
 }
 
@@ -943,7 +959,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  ${SCRIM_ATTR} {
+  [${SCRIM_ATTR}] {
     transition: none !important;
   }
 }
@@ -966,6 +982,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       const state = {
         /** The plugin's translator. */
         t,
+
         /** The current layout mode. */
         mode: 'wide',
         /** Whether the expanded sidebar is currently a drawer. */
@@ -986,6 +1003,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         usage: null,
         /** The button that opens the header's collapsed actions. */
         actions: null,
+
         /** The label inside the usage entry. */
         usageLabel: null,
         /** The backdrop behind the usage sheet. */
@@ -1046,6 +1064,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           width: Math.min(Math.round(vv.width), window.innerWidth),
           height: Math.min(Math.round(vv.height), window.innerHeight),
         }
+
       }
 
       /**
@@ -1530,6 +1549,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        */
       function syncActions(currentMode) {
         const button = ensureActions(state.t)
+
         const utilities = document.querySelector(A.headerUtilities)
         const hasActions = utilities !== null && utilities.querySelector('button') !== null
         const open = document.documentElement.getAttribute(ACTIONS_OPEN_ATTR) === 'open'
@@ -2002,6 +2022,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 
       // The settings dialog is portalled into the body, so it shows up as a
       // new child there rather than as a mutation inside the frame.
+
+
       const bodyObserver = new MutationObserver(() => {
         try {
           sync()
