@@ -972,6 +972,20 @@ describe('dsh-desktop-responsive client', () => {
     expect(css).toMatch(/header\.utilities"\] svg[\s\S]{0,120}width: 18px/)
   })
 
+  it('gives the project console the whole screen on a phone', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const css = style.textContent
+    // The console renders beside the conversation, which on a phone leaves
+    // it a hundred and fifty pixels of height.
+    expect(css).toMatch(/\.pc-root\s*\{[^}]*position: fixed/)
+    expect(css).toMatch(/\.pc-content\s*\{[^}]*flex: 1 1 auto/)
+    // The filter chips shrink until their text is clipped.
+    expect(css).toMatch(/\.pc-rail-item,[^}]*flex-shrink: 0/)
+    // The key figures sat three abreast.
+    expect(css).toMatch(/\.pc-kpis\s*\{[^}]*grid-template-columns: repeat\(2,/)
+  })
+
   it('injects its stylesheet exactly once', async () => {
     buildFrame({ width: 390 })
     await flush()

@@ -595,6 +595,89 @@ window.__ModuleLoader__.load({
   pointer-events: auto !important;
 }
 
+/* ── The project console on a phone ───────────────────────────────────────
+   The console is a workbench: it renders in the centre column, beside the
+   conversation, and on a phone that leaves it a hundred and fifty pixels
+   of height — a dashboard squeezed into a strip. It takes the screen
+   instead.
+
+   Its classes are semantic — pc-root, pc-content, pc-chips, pc-kpis — so
+   the layout can be adapted without guessing at hashed names. The console
+   is another plugin's, so the rules are harmless when it is absent. */
+:root[data-dshr-mode='phone'] .pc-root {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  z-index: 25 !important;
+  background: var(--dsw-alias-bg-base) !important;
+}
+
+:root[data-dshr-mode='phone'] .pc-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+}
+
+/* The console's own header carries a mark of its own, and the sidebar
+   button sits on top of it. The header makes room. */
+:root[data-dshr-mode='phone'] .pc-header {
+  padding-left: 44px !important;
+  /* The brand and the buttons do not fit side by side on a phone, and
+     squeezing the title until it reads "项…" helps nobody. The brand takes
+     a row of its own and the buttons take the next. */
+  flex-wrap: wrap !important;
+  row-gap: 8px !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+:root[data-dshr-mode='phone'] .pc-brand {
+  flex: 1 1 100% !important;
+}
+
+/* The mark is a flex item like any other, so on a narrow header it
+   shrinks until the title sits on top of it. */
+:root[data-dshr-mode='phone'] .pc-brand-mark {
+  flex-shrink: 0 !important;
+}
+
+/* With the mark at its full size the header's buttons no longer fit, and
+   the title is the part that can give way. */
+:root[data-dshr-mode='phone'] .pc-brand-title {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* The filter chips are a row of pills. They are allowed to shrink, and on
+   a phone they shrink until their text is clipped and the pills overlap.
+   They keep their width instead, and the row scrolls sideways — which it
+   already does. */
+:root[data-dshr-mode='phone'] .pc-rail-item,
+:root[data-dshr-mode='phone'] .pc-rail-group,
+:root[data-dshr-mode='phone'] .pc-chip-btn {
+  flex-shrink: 0 !important;
+}
+
+:root[data-dshr-mode='phone'] .pc-chips {
+  flex-wrap: wrap !important;
+  row-gap: 6px !important;
+}
+
+/* The key figures sit three abreast; two read better than three narrow
+   ones, and one of them alone would waste the width. */
+:root[data-dshr-mode='phone'] .pc-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+:root[data-dshr-mode='phone'] .pc-grid2,
+:root[data-dshr-mode='phone'] .pc-cal-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
 /* ── Tables ───────────────────────────────────────────────────────────────
    Upstream keeps a wide table's horizontal scroll bar hidden until the
    pointer hovers it. A phone has no pointer, so the table stayed clipped

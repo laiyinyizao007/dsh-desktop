@@ -263,6 +263,22 @@ thing that says what it is — it is the panel's first child and it offers a
 row-resize cursor. Both have to hold before the plugin touches it, so a
 panel that grows a header is left alone.
 
+## The project console
+
+The project console is a workbench: it renders in the centre column, beside
+the conversation, and on a phone that leaves it a hundred and fifty pixels
+of height — a dashboard squeezed into a strip, with its filter chips
+squeezed until their text is clipped and they overlap.
+
+On a phone the console takes the screen instead, its content scrolls, its
+key figures sit two abreast rather than three, and its chips keep their
+width and scroll sideways.
+
+Its classes are semantic — `pc-root`, `pc-content`, `pc-chips`, `pc-kpis`,
+`pc-rail-item` — so the layout can be adapted without guessing at hashed
+names. The console is another plugin's, so the rules are harmless when it
+is absent.
+
 ## Reading comfort
 
 **Tables.** Upstream keeps a wide table's horizontal scroll bar hidden until
