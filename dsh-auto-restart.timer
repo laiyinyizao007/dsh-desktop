@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the DSH client bundles every 30 seconds
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
