@@ -151,6 +151,55 @@ follows its content (a session with a running task is taller than one
 without), so the line is measured and published as `--dsh-header-centre`
 rather than pinned to a fixed offset that drifts by a couple of pixels.
 
+## Adding items to the collapsed menu
+
+The collapsed menu **is** upstream's own slot. A plugin that injects into
+`conversation.session.header.utilities` lands in it for free, and that is the
+better path: the item stays a React component and keeps the host's own
+styling.
+
+```ts
+export const inject = ['slots']
+export function apply(ctx: Context) {
+  ctx.effect(() =>
+    ctx.slots.inject('conversation.session.header.utilities', () =>
+      ctx.slots.register(
+        { name: 'conversation.session.header.utilities' },
+        () => <MyButton />,
+      ),
+    ),
+  )
+}
+```
+
+For the plugins that cannot speak React there is a service of this plugin's
+own. It takes a plain description and the plugin renders a button in a strip
+of its own, inside the menu:
+
+```ts
+export const inject = ['dshDesktopResponsive']
+export function apply(ctx: Context) {
+  ctx.effect(() => {
+    const service = ctx.get('dshDesktopResponsive')
+    return service.registerAction({
+      id: 'my-plugin:action',
+      label: 'My action',
+      icon: '<svg viewBox="0 0 16 16">…</svg>',
+      onSelect: () => doTheThing(),
+    })
+  })
+}
+```
+
+`registerAction` returns a function that removes the item. Registering the
+same id twice replaces the earlier item, so a plugin can update its entry
+without knowing whether it is already there.
+
+The strip publishes its width as `--dsh-actions-extra`, and the upstream
+containers move aside for it — so the menu stays one row however many items
+are in it.
+
+
 ## Reading comfort
 
 **Tables.** Upstream keeps a wide table's horizontal scroll bar hidden until

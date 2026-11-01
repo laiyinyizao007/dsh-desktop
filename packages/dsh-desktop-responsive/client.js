@@ -142,7 +142,8 @@ window.__ModuleLoader__.load({
 
 
 
-
+    /** The attribute of the strip holding the plugin's own actions. */
+    const ACTION_STRIP_ATTR = 'data-dshr-action-strip'
 
     /** The attribute of the button that opens the header's actions. */
     const ACTIONS_ATTR = 'data-dshr-actions'
@@ -619,11 +620,11 @@ window.__ModuleLoader__.load({
 }
 
 :root[data-dshr-mode='phone'] ${A.headerUtilities} {
-  right: 68px !important;
+  right: calc(68px + var(--dsh-actions-extra, 0px)) !important;
 }
 
 :root[data-dshr-mode='phone'] ${A.headerCorner} {
-  right: 8px !important;
+  right: calc(8px + var(--dsh-actions-extra, 0px)) !important;
 }
 
 :root[data-dshr-mode='phone'][data-dshr-actions-open='open'] ${A.headerUtilities},
@@ -902,6 +903,61 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   height: 28px !important;
 }
 
+/* The strip holding the items other plugins registered. It sits at the
+   right of the menu, and the upstream containers move aside for it: the
+   plugin publishes its width as --dsh-actions-extra. */
+[${ACTION_STRIP_ATTR}] {
+  display: none !important;
+}
+
+:root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}] {
+  position: fixed !important;
+  top: 52px !important;
+  right: 8px !important;
+  z-index: 60 !important;
+  /* The strip keeps its box while the menu is shut, so that its width —
+     and the room the upstream containers give it — stay correct. */
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 6px !important;
+  border-radius: 14px !important;
+  background: var(--dsw-alias-bg-layer-2) !important;
+  box-shadow: var(--dsw-elevation-panel) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(-6px) !important;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+:root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}]:empty {
+  padding: 0 !important;
+}
+
+:root[data-dshr-mode='phone'][data-dshr-actions-open='open'] [${ACTION_STRIP_ATTR}] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+:root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}] button {
+  width: 44px !important;
+  height: 44px !important;
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  color: var(--dsw-alias-label-primary) !important;
+  cursor: pointer !important;
+}
+
+:root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}] button:hover {
+  background: var(--dsw-alias-interactive-bg-hover) !important;
+}
+
+:root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}] svg {
 [${TABS_TOGGLE_ATTR}] svg,
 [${ACTIONS_ATTR}] svg {
   width: 16px !important;
@@ -970,7 +1026,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
      *
      * @returns {() => void} A disposer that removes everything the plugin added.
      */
-    function install(t) {
+    function install(t, service) {
       if (document.querySelector(`style[data-plugin-css="${STYLE_KEY}"]`)) {
         return () => {}
       }
@@ -982,7 +1038,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       const state = {
         /** The plugin's translator. */
         t,
-
+        /** The items other plugins registered for the collapsed menu. */
+        registeredActions: [],
         /** The current layout mode. */
         mode: 'wide',
         /** Whether the expanded sidebar is currently a drawer. */
@@ -1003,7 +1060,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         usage: null,
         /** The button that opens the header's collapsed actions. */
         actions: null,
-
+        /** The strip holding the items other plugins registered. */
+        actionStrip: null,
         /** The label inside the usage entry. */
         usageLabel: null,
         /** The backdrop behind the usage sheet. */
@@ -1471,6 +1529,58 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * where the rail actually took space.
        */
       /**
+       * Watch the registrations other plugins make.
+       *
+       * A plugin may register before the header is on screen, so the strip
+       * is rebuilt whenever the list changes and whenever the layout
+       * settles.
+       */
+      function watchActions() {
+        return service.subscribe(() => {
+          state.registeredActions = service.listActions()
+          renderActionStrip()
+        })
+      }
+
+      /**
+       * Render the items other plugins registered.
+       *
+       * The plugin owns this strip, so it can rebuild it whenever a plugin
+       * registers or drops an item. Its width is published so that the
+       * upstream containers beside it can make room.
+       */
+      function renderActionStrip() {
+        const strip = state.actionStrip
+        if (strip === null) return
+        const list = service.listActions()
+        strip.textContent = ''
+        for (const action of list) {
+          const button = document.createElement('button')
+          button.type = 'button'
+          button.setAttribute('data-dshr-action', action.id)
+          button.setAttribute('aria-label', action.label)
+          button.title = action.label
+          if (action.icon !== null) {
+            button.innerHTML = action.icon
+          } else {
+            button.innerHTML =
+              '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+              '<circle cx="3.5" cy="8" r="1.4" fill="currentColor"/>' +
+              '<circle cx="8" cy="8" r="1.4" fill="currentColor"/>' +
+              '<circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg>'
+          }
+          button.addEventListener('click', () => {
+            document.documentElement.removeAttribute(ACTIONS_OPEN_ATTR)
+            sync(state.mode)
+            if (action.onSelect !== null) action.onSelect()
+          })
+          strip.appendChild(button)
+        }
+        const width = strip.getBoundingClientRect().width
+        document.documentElement.style.setProperty('--dsh-actions-extra', `${Math.round(width)}px`)
+      }
+
+      /**
        * The button that opens the header's collapsed actions.
        *
        * Six small buttons used to sit in the top-right corner. They are
@@ -1498,6 +1608,23 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         document.body.appendChild(button)
         state.actions = button
         return button
+      }
+
+      /**
+       * The strip the plugin's own items live in.
+       *
+       * It sits at the right of the menu, and the upstream containers move
+       * aside for it: the width is published as --dsh-actions-extra.
+       */
+      function ensureActionStrip() {
+        if (state.actionStrip !== null && state.actionStrip.isConnected) return state.actionStrip
+        const strip = document.createElement('div')
+        strip.setAttribute(ACTION_STRIP_ATTR, '')
+        strip.setAttribute('role', 'menu')
+        document.body.appendChild(strip)
+        state.actionStrip = strip
+        renderActionStrip()
+        return strip
       }
 
       /**
@@ -1549,7 +1676,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        */
       function syncActions(currentMode) {
         const button = ensureActions(state.t)
-
+        ensureActionStrip()
         const utilities = document.querySelector(A.headerUtilities)
         const hasActions = utilities !== null && utilities.querySelector('button') !== null
         const open = document.documentElement.getAttribute(ACTIONS_OPEN_ATTR) === 'open'
@@ -2022,7 +2149,9 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 
       // The settings dialog is portalled into the body, so it shows up as a
       // new child there rather than as a mutation inside the frame.
-
+      // Another plugin may register an item at any time, including before
+      // the header is on screen.
+      const stopWatchingActions = watchActions()
 
       const bodyObserver = new MutationObserver(() => {
         try {
@@ -2102,6 +2231,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           visualViewport.removeEventListener('scroll', onResize)
         }
         observer.disconnect()
+        stopWatchingActions()
         bodyObserver.disconnect()
         if (resizeObserver !== null) resizeObserver.disconnect()
         if (state.panelObserver !== null) state.panelObserver.disconnect()
@@ -2112,6 +2242,10 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         }
         if (state.usage !== null) state.usage.remove()
         if (state.actions !== null) state.actions.remove()
+        if (state.actionStrip !== null && state.actionStrip !== undefined) {
+          state.actionStrip.remove()
+        }
+        document.documentElement.style.removeProperty('--dsh-actions-extra')
         if (state.sheetBackdrop !== null) state.sheetBackdrop.remove()
         document.documentElement.removeAttribute(ROOT_MODE_ATTR)
         document.documentElement.removeAttribute(MISSING_ATTR)
@@ -2129,13 +2263,78 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
     }
 
     /**
+     * The service other plugins use to add items to the collapsed menu.
+     *
+     * The menu itself is upstream's own slot: a plugin that injects into
+     * `conversation.session.header.utilities` lands in it for free, and
+     * that is the better path — the item stays a React component and keeps
+     * the host's own styling.
+     *
+     * This service is for the plugins that cannot speak React. It takes a
+     * plain description and the plugin renders a button of its own, in its
+     * own strip, inside the menu.
+     */
+    function createService() {
+      const actions = new Map()
+      const listeners = new Set()
+      const notify = () => {
+        for (const listener of listeners) listener()
+      }
+      return {
+        /**
+         * Add an item to the collapsed menu.
+         *
+         * @param {object} action - The item's description.
+         * @param {string} action.id - A stable id; it replaces an earlier item with the same id.
+         * @param {string} action.label - The item's accessible name.
+         * @param {string} [action.icon] - An SVG element to show.
+         * @param {Function} [action.onSelect] - Called when the item is chosen.
+         * @returns {() => void} A function that removes the item.
+         */
+        registerAction(action) {
+          const id = action?.id
+          if (typeof id !== 'string' || id === '') {
+            throw new Error('dsh-desktop-responsive: an action needs a string id')
+          }
+          actions.set(id, {
+            id,
+            label: typeof action.label === 'string' ? action.label : id,
+            icon: typeof action.icon === 'string' ? action.icon : null,
+            onSelect: typeof action.onSelect === 'function' ? action.onSelect : null,
+          })
+          notify()
+          return () => {
+            actions.delete(id)
+            notify()
+          }
+        },
+        /** The items registered so far, in registration order. */
+        listActions() {
+          return [...actions.values()]
+        },
+        /**
+         * Watch for registrations.
+         *
+         * @param {Function} listener - Called after every change.
+         * @returns {() => void} A function that stops watching.
+         */
+        subscribe(listener) {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+      }
+    }
+
+    /**
      * Activate the plugin.
      *
      * @param {object} ctx - The client root context.
      */
     function apply(ctx) {
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'responsive dictionaries')
-      ctx.effect(() => install(ctx.locale.bind(NS)), 'desktop-responsive layout')
+      const service = createService()
+      ctx.provide('dshDesktopResponsive', service)
+      ctx.effect(() => install(ctx.locale.bind(NS), service), 'desktop-responsive layout')
     }
 
     const inject = ['locale']

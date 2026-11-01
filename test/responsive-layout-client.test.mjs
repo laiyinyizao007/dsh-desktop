@@ -811,6 +811,32 @@ describe('dsh-desktop-responsive client', () => {
     expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
   })
 
+  it('lets another plugin add an item to the collapsed menu', async () => {
+    // The frame appears after the plugin installed; the observer notices.
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    const service = plugin.services.get('dshDesktopResponsive')
+    expect(service).toBeDefined()
+    const chosen = []
+    const remove = service.registerAction({
+      id: 'demo:action',
+      label: '示例操作',
+      onSelect: () => chosen.push('demo:action'),
+    })
+    await flush()
+    const strip = document.querySelector('[data-dshr-action-strip]')
+    expect(strip).not.toBeNull()
+    const button = strip.querySelector('[data-dshr-action="demo:action"]')
+    expect(button).not.toBeNull()
+    expect(button.getAttribute('aria-label')).toBe('示例操作')
+    button.click()
+    await flush()
+    expect(chosen).toEqual(['demo:action'])
+    remove()
+    await flush()
+    expect(strip.querySelector('[data-dshr-action="demo:action"]')).toBeNull()
+  })
+
   it('writes every plugin attribute selector with its brackets', async () => {
     await activatePlugin()
     const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
