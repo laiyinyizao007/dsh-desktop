@@ -631,7 +631,7 @@ window.__ModuleLoader__.load({
   z-index: 60 !important;
   display: flex !important;
   align-items: center !important;
-  gap: 4px !important;
+  gap: 6px !important;
   padding: 6px !important;
   border-radius: 14px !important;
   background: var(--dsw-alias-bg-layer-2) !important;
@@ -642,12 +642,32 @@ window.__ModuleLoader__.load({
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
+/* The row of tools is one strip: the upstream's utilities and the corner
+   sit side by side with an even gap, and the plugin's own items join them
+   on the right. The trigger above it shares the strip's right edge. */
 :root[data-dshr-mode='phone'] ${A.headerUtilities} {
-  right: calc(68px + var(--dsh-actions-extra, 0px)) !important;
+  right: calc(54px + var(--dsh-actions-extra, 0px)) !important;
 }
 
 :root[data-dshr-mode='phone'] ${A.headerCorner} {
   right: calc(8px + var(--dsh-actions-extra, 0px)) !important;
+}
+
+/* Every tool in the row is the same height, so that their marks line up.
+   One of them is a split button — a bordered group whose parts share its
+   width — and forcing the parts would clip the mark inside, so the group
+   grows and centres its parts instead. */
+:root[data-dshr-mode='phone'] ${A.headerUtilities} > *,
+:root[data-dshr-mode='phone'] ${A.headerCorner} > * {
+  min-height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+:root[data-dshr-mode='phone'] ${A.headerUtilities} svg,
+:root[data-dshr-mode='phone'] ${A.headerCorner} svg {
+  width: 18px !important;
+  height: 18px !important;
 }
 
 :root[data-dshr-mode='phone'][data-dshr-actions-open='open'] ${A.headerUtilities},
@@ -668,7 +688,7 @@ window.__ModuleLoader__.load({
 
 /* The room the collapsed menu's trigger needs. */
 :root[data-dshr-mode='phone'] ${A.conversationHeader} {
-  padding-right: 40px !important;
+  padding-right: 48px !important;
 }
 
 /* ── Type and icons on a phone ────────────────────────────────────────────
@@ -1028,7 +1048,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 /* The button that opens the header's collapsed actions. */
 [${ACTIONS_ATTR}] {
   top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
-  right: 4px !important;
+  right: 8px !important;
 }
 
 /* The entry that opens the usage sheet. It is a row of the model menu, so

@@ -164,6 +164,13 @@ DOM — they are lifted out of the header's grid and parked below it, so
 React never sees a change and every button keeps its own owner. A tap
 outside the menu, or Escape, puts it away.
 
+The tools in that menu are one row: every mark is 18 px, every tool is at
+least 28 px tall, and the row's containers sit side by side with an even
+gap and share the trigger's right edge. One of the tools is a split button
+— a bordered group whose parts share its width — so the group is grown and
+its parts centred, rather than the parts being forced, which would clip
+the mark inside.
+
 The floating controls — the menu button, the view-tabs chevron and this
 menu's trigger — are one set: the same 36 px box, the same 18 px icon, the
 same 1.5 px stroke and the same corner radius. They also share the title

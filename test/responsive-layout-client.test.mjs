@@ -958,6 +958,20 @@ describe('dsh-desktop-responsive client', () => {
     expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
   })
 
+  it('lines the collapsed menu tools up on one centre', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const css = style.textContent
+    // One of the tools is a split button — a bordered group whose parts
+    // share its width — and forcing the parts would clip the mark inside,
+    // so the group grows and centres them instead.
+    expect(css).toMatch(
+      /header\.utilities"\] > \*[\s\S]{0,200}min-height: 28px/
+    )
+    // Every tool carries the same mark size.
+    expect(css).toMatch(/header\.utilities"\] svg[\s\S]{0,120}width: 18px/)
+  })
+
   it('injects its stylesheet exactly once', async () => {
     buildFrame({ width: 390 })
     await flush()
