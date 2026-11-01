@@ -872,6 +872,10 @@ describe('dsh-desktop-responsive client', () => {
     // in another pair is not a selector at all: the browser drops the rule
     // and the style silently stops applying.
     expect(css).not.toMatch(/\[\[[^\]]+\]\]/)
+    // A rule that swallowed another one reads as a nested rule, which the
+    // browser resolves as a descendant — so the outer selector stops
+    // matching anything and the style goes quiet.
+    expect(css).not.toMatch(/\{[^}]*\[\$\{/)
   })
 
   it('ignores a visual viewport that is too small to be a keyboard', async () => {

@@ -165,7 +165,9 @@ React never sees a change and every button keeps its own owner. A tap
 outside the menu, or Escape, puts it away.
 
 The floating controls — the menu button, the view-tabs chevron and this
-menu's trigger — share the title row's centre line. The row's height
+menu's trigger — are one set: the same 36 px box, the same 18 px icon, the
+same 1.5 px stroke and the same corner radius. They also share the title
+row's centre line. The row's height
 follows its content (a session with a running task is taller than one
 without), so the line is measured and published as `--dsh-header-centre`
 rather than pinned to a fixed offset that drifts by a couple of pixels.

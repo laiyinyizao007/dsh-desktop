@@ -668,7 +668,7 @@ window.__ModuleLoader__.load({
 
 /* The room the collapsed menu's trigger needs. */
 :root[data-dshr-mode='phone'] ${A.conversationHeader} {
-  padding-right: 76px !important;
+  padding-right: 40px !important;
 }
 
 /* ── Type and icons on a phone ────────────────────────────────────────────
@@ -887,7 +887,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
    The clearance is the variable upstream already uses for the macOS
    traffic lights, so the two never collide. */
 :root[data-dshr-mode='phone'] {
-  --dsh-frame-leading-clearance: 76px;
+  --dsh-frame-leading-clearance: 84px;
 }
 
 /* The menu button is the plugin's own element; it stands in for the rail's
@@ -907,23 +907,27 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   cursor: pointer !important;
 }
 
+/* The three controls share one size, so that they read as one row rather
+   than three things at three sizes. They also share the title row's centre
+   line, which the script measures and publishes as --dsh-header-centre. */
+[${MENU_ATTR}],
+[${TABS_TOGGLE_ATTR}],
+[${ACTIONS_ATTR}] {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 12px !important;
+}
+
 [${MENU_ATTR}] {
-  /* The floating controls sit on the title row's centre line, so they read
-     as one row instead of three things at three heights. The script
-     measures that line and publishes it as --dsh-header-centre. */
-  top: calc(var(--dsh-header-centre, 25px) - 20px) !important;
+  top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
   left: 4px !important;
-  width: 40px !important;
-  height: 40px !important;
 }
 
 /* The chevron that folds the view tabs back. It sits beside the menu
    button, in the space the header reserves for its leading area. */
 [${TABS_TOGGLE_ATTR}] {
-  top: calc(var(--dsh-header-centre, 25px) - 14px) !important;
-  left: 48px !important;
-  width: 28px !important;
-  height: 28px !important;
+  top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
+  left: 44px !important;
 }
 
 /* The bottom workbench on a phone.
@@ -1016,19 +1020,15 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 }
 
 :root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}] svg {
-[${TABS_TOGGLE_ATTR}] svg,
-[${ACTIONS_ATTR}] svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
   display: block !important;
 }
 
 /* The button that opens the header's collapsed actions. */
 [${ACTIONS_ATTR}] {
   top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
-  right: 28px !important;
-  width: 36px !important;
-  height: 36px !important;
+  right: 4px !important;
 }
 
 /* The entry that opens the usage sheet. It is a row of the model menu, so
@@ -1057,18 +1057,13 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   outline-offset: 2px !important;
 }
 
-[${MENU_ATTR}] svg {
+/* The three header controls carry icons of one size, so that they read as
+   one set rather than three. */
+[${MENU_ATTR}] svg,
 [${TABS_TOGGLE_ATTR}] svg,
 [${ACTIONS_ATTR}] svg {
-  width: 16px !important;
-  height: 16px !important;
-  display: block !important;
-}
-
-[${TABS_TOGGLE_ATTR}] svg,
-[${ACTIONS_ATTR}] svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 18px !important;
+  height: 18px !important;
   display: block !important;
 }
 
@@ -1710,9 +1705,9 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         button.setAttribute('aria-expanded', 'false')
         button.innerHTML =
           '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
-          '<circle cx="3.5" cy="8" r="1.4" fill="currentColor"/>' +
-          '<circle cx="8" cy="8" r="1.4" fill="currentColor"/>' +
-          '<circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg>'
+          '<circle cx="3.5" cy="8" r="1.1" fill="currentColor"/>' +
+          '<circle cx="8" cy="8" r="1.1" fill="currentColor"/>' +
+          '<circle cx="12.5" cy="8" r="1.1" fill="currentColor"/></svg>'
         button.addEventListener('click', () => {
           const root = document.documentElement
           const open = root.getAttribute(ACTIONS_OPEN_ATTR) === 'open'
