@@ -95,6 +95,14 @@ describe('the anchor manifest', () => {
   it('names the package and the origin of every anchor', () => {
     for (const [key, anchor] of Object.entries(anchors)) {
       expect(anchor.package, `${key} has no upstream package`).toBeTruthy()
+      // 'element' is a semantic HTML element: it has no upstream class
+      // name to rehash, so it is as stable as an attribute. 'class' is a
+      // semantic class name of another plugin's, which the rule about
+      // hashed names keeps honest.
+      expect(
+        ['marker', 'attribute', 'element', 'class'],
+        `${key} has an unknown origin`
+      ).toContain(anchor.origin)
       if (anchor.optional === true) {
         // A surface that belongs to another plugin: it is not upstream, so
         // there is no upstream package to name, and the surface may be
@@ -105,12 +113,6 @@ describe('the anchor manifest', () => {
         UPSTREAM_FILES[anchor.package],
         `${key} names an unknown upstream package: ${anchor.package}`
       ).toBeTruthy()
-      // 'element' is a semantic HTML element: it has no upstream class
-      // name to rehash, so it is as stable as an attribute.
-      expect(
-        ['marker', 'attribute', 'element'],
-        `${key} has an unknown origin`
-      ).toContain(anchor.origin)
     }
   })
 

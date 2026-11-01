@@ -996,6 +996,23 @@ describe('dsh-desktop-responsive client', () => {
     expect(css).toMatch(/\.pc-kpis\s*\{[^}]*grid-template-columns: repeat\(2,/)
   })
 
+  it('says when an adaptation to another plugin stops applying', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    // A surface that belongs to another plugin, with the class the plugin
+    // adapts by.
+    const console_ = document.createElement('div')
+    console_.className = 'pc-root'
+    document.body.appendChild(console_)
+    // And the stylesheet that adapts it does not take — the way it would
+    // not if the plugin's own stylesheet lost the rule.
+    document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]').remove()
+    await flush()
+    // The check runs on the layout's own timer.
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    const root = document.documentElement
+    expect(root.getAttribute('data-dshr-drift')).toContain('project-console')
+  })
+
   it('injects its stylesheet exactly once', async () => {
     buildFrame({ width: 390 })
     await flush()

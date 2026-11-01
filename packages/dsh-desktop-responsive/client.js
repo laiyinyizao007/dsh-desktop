@@ -150,6 +150,9 @@ window.__ModuleLoader__.load({
     /** The attribute that marks a table container as overflowing. */
     const TABLE_OVERFLOW_ATTR = 'data-dshr-overflow'
 
+    /** The attribute that names the surfaces whose adaptation stopped. */
+    const DRIFT_ATTR = 'data-dshr-drift'
+
     /** The attribute of a control the plugin has taken over. */
     const NO_DRAG_ATTR = 'data-dshr-no-drag'
 
@@ -250,6 +253,27 @@ window.__ModuleLoader__.load({
         origin: 'marker',
         package: '@deepseek-ai/dsh-client-ui-sidebar',
         surface: 'frame',
+      },
+      consoleRoot: {
+        // The project console's own root. Its classes are semantic rather
+        // than hashed, but the console is another plugin's and may be
+        // upgraded under us.
+        selector: '.pc-root',
+        origin: 'class',
+        package: 'dsh-workbench-project-console',
+        optional: true,
+      },
+      consoleChips: {
+        selector: '.pc-rail-item',
+        origin: 'class',
+        package: 'dsh-workbench-project-console',
+        optional: true,
+      },
+      workbenchHeader: {
+        selector: '.dshWbMarketHeaderText',
+        origin: 'class',
+        package: 'dsh-desktop-workbenches',
+        optional: true,
       },
       bottomPanel: {
         // The bottom workbench of the better-sidebar plugin. It is not
@@ -598,7 +622,7 @@ window.__ModuleLoader__.load({
 /* ── The workbench's own header ────────────────────────────────────────────
    The workbench home carries a title of its own, in the corner the
    sidebar's button occupies. The header makes room for it. */
-:root[data-dshr-mode='phone'] .dshWbMarketHeaderText {
+:root[data-dshr-mode='phone'] ${A.workbenchHeader} {
   padding-left: 44px !important;
 }
 
@@ -611,7 +635,7 @@ window.__ModuleLoader__.load({
    Its classes are semantic — pc-root, pc-content, pc-chips, pc-kpis — so
    the layout can be adapted without guessing at hashed names. The console
    is another plugin's, so the rules are harmless when it is absent. */
-:root[data-dshr-mode='phone'] .pc-root {
+:root[data-dshr-mode='phone'] ${A.consoleRoot} {
   position: fixed !important;
   inset: 0 !important;
   width: 100% !important;
@@ -663,7 +687,7 @@ window.__ModuleLoader__.load({
    a phone they shrink until their text is clipped and the pills overlap.
    They keep their width instead, and the row scrolls sideways — which it
    already does. */
-:root[data-dshr-mode='phone'] .pc-rail-item,
+:root[data-dshr-mode='phone'] ${A.consoleChips},
 :root[data-dshr-mode='phone'] .pc-rail-group,
 :root[data-dshr-mode='phone'] .pc-chip-btn {
   flex-shrink: 0 !important;
@@ -1749,6 +1773,53 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       }
 
       /**
+       * Check that the adaptations to other plugins' surfaces still take.
+       *
+       * The bottom workbench, the project console and the workbench home
+       * belong to other plugins. Their class names are semantic rather than
+       * hashed, but a plugin that is upgraded may still rename them — and
+       * then the rules here would quietly stop applying, which is exactly
+       * the kind of failure that looks like nothing at all.
+       *
+       * The check asks the browser what happened instead of trusting the
+       * stylesheet: when a surface is on the screen and the rule did not
+       * take, it says so.
+       */
+      function auditAdaptations() {
+        const drift = []
+        const root = document.documentElement
+        if (root.getAttribute(ROOT_MODE_ATTR) === 'phone') {
+          const panel = document.querySelector(A.bottomPanel)
+          if (panel !== null) {
+            const height = parseFloat(getComputedStyle(panel).height)
+            if (!(Math.abs(height - window.innerHeight) <= 8)) drift.push('bottom-panel')
+          }
+          const console_ = document.querySelector(A.consoleRoot)
+          if (console_ !== null && getComputedStyle(console_).position !== 'fixed') {
+            drift.push('project-console')
+          }
+          const home = document.querySelector(A.workbenchHeader)
+          if (home !== null && parseFloat(getComputedStyle(home).paddingLeft) < 40) {
+            drift.push('workbench-home')
+          }
+        }
+        if (drift.length === 0) {
+          if (root.hasAttribute(DRIFT_ATTR)) {
+            root.removeAttribute(DRIFT_ATTR)
+            console.info(`[${STYLE_KEY}] every adaptation applies.`)
+          }
+          return
+        }
+        const report = drift.join(' ')
+        if (root.getAttribute(DRIFT_ATTR) === report) return
+        root.setAttribute(DRIFT_ATTR, report)
+        console.error(
+          `[${STYLE_KEY}] the layout for ${report} stopped applying. ` +
+            'The plugin it belongs to was probably upgraded and renamed its classes.'
+        )
+      }
+
+      /**
        * Watch the registrations other plugins make.
        *
        * A plugin may register before the header is on screen, so the strip
@@ -2449,6 +2520,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       // more than the check is worth.
       const verifyTimer = setInterval(() => {
         verifyLayout()
+        auditAdaptations()
         // The visual viewport is the only source for the keyboard, and a
         // web view does not always say when it changed. Measuring again
         // costs nothing and lets a stale number correct itself.

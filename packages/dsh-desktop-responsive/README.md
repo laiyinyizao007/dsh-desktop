@@ -284,6 +284,29 @@ Its classes are semantic — `pc-root`, `pc-content`, `pc-chips`, `pc-kpis`,
 names. The console is another plugin's, so the rules are harmless when it
 is absent.
 
+## Watching the adaptations
+
+The bottom workbench, the project console and the workbench home belong to
+other plugins. Their class names are semantic rather than hashed, but a
+plugin that is upgraded may still rename them — and then the rules here
+would quietly stop applying, which is the kind of failure that looks like
+nothing at all.
+
+So the plugin checks: every second, it asks the browser what actually
+happened to the surfaces it adapts. A surface that is on the screen and
+whose rule did not take is named on the document root as
+`data-dshr-drift`, and in the console:
+
+```
+[dsh-desktop-responsive] the layout for project-console stopped applying.
+The plugin it belongs to was probably upgraded and renamed its classes.
+```
+
+What it catches is a rule that stopped taking — a stylesheet of the
+plugin's own winning the cascade, or a rule lost in a merge. What it
+cannot catch is a class that was renamed outright: the surface is then
+simply not found, and the plugin has no other way of knowing it is there.
+
 ## Reading comfort
 
 **Tables.** Upstream keeps a wide table's horizontal scroll bar hidden until
