@@ -263,6 +263,11 @@ thing that says what it is — it is the panel's first child and it offers a
 row-resize cursor. Both have to hold before the plugin touches it, so a
 panel that grows a header is left alone.
 
+## The workbench home
+
+The workbench home carries a title of its own, in the corner the sidebar's
+button occupies. The header makes room for it.
+
 ## The project console
 
 The project console is a workbench: it renders in the centre column, beside

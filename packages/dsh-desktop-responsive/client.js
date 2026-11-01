@@ -595,6 +595,13 @@ window.__ModuleLoader__.load({
   pointer-events: auto !important;
 }
 
+/* ── The workbench's own header ────────────────────────────────────────────
+   The workbench home carries a title of its own, in the corner the
+   sidebar's button occupies. The header makes room for it. */
+:root[data-dshr-mode='phone'] .dshWbMarketHeaderText {
+  padding-left: 44px !important;
+}
+
 /* ── The project console on a phone ───────────────────────────────────────
    The console is a workbench: it renders in the centre column, beside the
    conversation, and on a phone that leaves it a hundred and fifty pixels

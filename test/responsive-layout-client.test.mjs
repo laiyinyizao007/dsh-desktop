@@ -972,6 +972,16 @@ describe('dsh-desktop-responsive client', () => {
     expect(css).toMatch(/header\.utilities"\] svg[\s\S]{0,120}width: 18px/)
   })
 
+  it('keeps the sidebar button clear of the workbench title', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // The workbench home has a title of its own in the corner the sidebar
+    // button occupies.
+    expect(style.textContent).toMatch(
+      /\.dshWbMarketHeaderText\s*\{[^}]*padding-left: 44px/
+    )
+  })
+
   it('gives the project console the whole screen on a phone', async () => {
     await activatePlugin()
     const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
