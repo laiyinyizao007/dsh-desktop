@@ -928,6 +928,32 @@ describe('dsh-desktop-responsive client', () => {
     expect(css).toMatch(/data-dshr-panel-layer\][^{]*\{[^}]*z-index: 46/)
   })
 
+  it('keeps the floating controls in the header when the keyboard opens', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    const header = document.querySelector('[data-dsh-region="conversation-header"]')
+    const row = document.createElement('div')
+    row.setAttribute('data-dsh-region', 'conversation-title-row')
+    header.appendChild(row)
+    // The plugin moves the frame down by the visual offset so that the
+    // header stays on the screen, so the row's own position moves with it.
+    row.getBoundingClientRect = () => ({
+      y: 10 + viewport.offsetTop, height: 34,
+      top: 10 + viewport.offsetTop, bottom: 44 + viewport.offsetTop,
+      width: 280, left: 20, right: 300, x: 20,
+    })
+    await flush()
+    expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
+
+    // The keyboard opens: iOS scrolls the layout viewport.
+    viewport.offsetTop = 180
+    viewport.height = 500
+    viewport.dispatchEvent(new Event('resize'))
+    await flush()
+    // The measurement has to take the plugin's own move back out, or the
+    // controls follow the header down the screen.
+    expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
+  })
+
   it('injects its stylesheet exactly once', async () => {
     buildFrame({ width: 390 })
     await flush()

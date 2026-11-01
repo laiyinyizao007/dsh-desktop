@@ -170,6 +170,12 @@ follows its content (a session with a running task is taller than one
 without), so the line is measured and published as `--dsh-header-centre`
 rather than pinned to a fixed offset that drifts by a couple of pixels.
 
+The measurement has to take the plugin's own move back out. The frame is
+moved down by the visual offset so that the header stays on the screen
+when the keyboard opens, and the row moves with it — so reading the row's
+position as it stands would place the controls wherever the header was
+pushed to, and the header would be left with its title alone.
+
 ## Adding items to the collapsed menu
 
 The collapsed menu **is** upstream's own slot. A plugin that injects into

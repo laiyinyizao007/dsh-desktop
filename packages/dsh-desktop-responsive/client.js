@@ -1762,7 +1762,13 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           root.style.removeProperty('--dsh-header-centre')
           return
         }
-        root.style.setProperty('--dsh-header-centre', `${Math.round(rect.y + rect.height / 2)}px`)
+        // The frame is moved down by the visual offset so that the header
+        // stays on the screen when the keyboard opens. The measurement has
+        // to take that move back out: otherwise the floating controls read
+        // the row's moved position and follow it down the screen, and the
+        // header is left with its title alone.
+        const centre = rect.y + rect.height / 2 - visibleOffset()
+        root.style.setProperty('--dsh-header-centre', `${Math.round(centre)}px`)
       }
 
       /**
