@@ -1024,6 +1024,16 @@ describe('dsh-desktop-responsive client', () => {
     )
   })
 
+  it('shows the row of actions under a message on a phone', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // Upstream hides the copy, the like and the comment until the pointer
+    // comes near. A phone has no pointer, so the row is shown instead.
+    expect(style.textContent).toMatch(
+      /data-actions-reveal='hover'\] \*[^}]*opacity: 1 !important/
+    )
+  })
+
   it('injects its stylesheet exactly once', async () => {
     buildFrame({ width: 390 })
     await flush()

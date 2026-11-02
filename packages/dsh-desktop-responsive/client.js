@@ -311,6 +311,13 @@ window.__ModuleLoader__.load({
         origin: 'attribute',
         package: '@deepseek-ai/dsh-client-ui-conversation',
       },
+      actionsReveal: {
+        // The row of actions under a message. Upstream writes the attribute
+        // with a dynamic value, so only its name is the contract.
+        selector: "[data-actions-reveal='hover']",
+        origin: 'attribute',
+        package: '@deepseek-ai/dsh-client-ui-chat',
+      },
       conversationContent: {
         selector: '[data-conversation-content]',
         origin: 'attribute',
@@ -512,6 +519,10 @@ window.__ModuleLoader__.load({
    has no room for that hierarchy. The clearance is dropped, and the bubble
    takes the flow's own gutter, which is about 90% of the screen. */
 :root[data-dshr-mode='phone'] ${A.conversationContent} {
+  /* The flow is the one thing on a phone that scrolls, and it stops at
+     the ends: the last message stays where it is, and pulling further
+     moves nothing. */
+  overscroll-behavior: none !important;
   --dsh-composer-side-clearance: 0px !important;
   /* The flow's own gutter is now the only gutter, so the column takes all
      of it instead of taking a little off on top of it. */
@@ -654,7 +665,7 @@ window.__ModuleLoader__.load({
 /* The console's own header carries a mark of its own, and the sidebar
    button sits on top of it. The header makes room. */
 :root[data-dshr-mode='phone'] .pc-header {
-  padding-left: 44px !important;
+  padding-left: 48px !important;
   /* The brand and the buttons do not fit side by side on a phone, and
      squeezing the title until it reads "项…" helps nobody. The brand takes
      a row of its own and the buttons take the next. */
@@ -997,6 +1008,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] ${A.settingsOptions} {
   height: var(--dsh-visual-height, 100%) !important;
 }
 
+/* Nothing may be pulled past the edge and let go. A phone's surface
+   rubber-bands at the ends: pull up at the bottom and the whole shell
+   comes with you and springs back, which reads as the bottom of the app
+   being loose. */
+:root[data-dshr-mode='phone'] {
+  overscroll-behavior: none !important;
+}
+
 /* Safari scrolls the layout viewport when the keyboard opens, so the
    visible band starts below its top. The frame moves down with it —
    \`top\` on a relatively positioned element, which keeps \`position:
@@ -1010,6 +1029,19 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   top: var(--dsh-visual-offset, 0px) !important;
   bottom: auto !important;
   height: var(--dsh-visual-height, 100%) !important;
+}
+
+/* ── The row of actions under a message ───────────────────────────────────
+   Upstream hides it until the pointer comes near: the copy, the like and
+   the comment under a message. A phone has no pointer to hover with, and a
+   tap counts as a hover — so the row turns up on the second tap, and the
+   first is spent finding out that it was there at all.
+
+   On a phone the row is simply shown. The elements upstream hides from a
+   screen reader are hidden with a clip rather than an opacity, so this
+   uncovers nothing that was meant to stay unseen. */
+:root[data-dshr-mode='phone'] ${A.actionsReveal} *:not(:disabled):not([aria-disabled='true']) {
+  opacity: 1 !important;
 }
 
 /* ── The space below the composer ─────────────────────────────────────────
@@ -1034,7 +1066,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
    The clearance is the variable upstream already uses for the macOS
    traffic lights, so the two never collide. */
 :root[data-dshr-mode='phone'] {
-  --dsh-frame-leading-clearance: 84px;
+  --dsh-frame-leading-clearance: 98px;
 }
 
 /* The menu button is the plugin's own element; it stands in for the rail's
@@ -1060,21 +1092,24 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 [${MENU_ATTR}],
 [${TABS_TOGGLE_ATTR}],
 [${ACTIONS_ATTR}] {
-  width: 36px !important;
-  height: 36px !important;
-  border-radius: 12px !important;
+  /* 44 px is the smallest box a thumb can find without aiming. The mark
+     inside it stays small: the button has no chrome of its own, so a bigger
+     target changes nothing that is seen — only what can be pressed. */
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 14px !important;
 }
 
 [${MENU_ATTR}] {
-  top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
-  left: 4px !important;
+  top: calc(var(--dsh-header-centre, 25px) - 22px) !important;
+  left: 2px !important;
 }
 
 /* The chevron that folds the view tabs back. It sits beside the menu
    button, in the space the header reserves for its leading area. */
 [${TABS_TOGGLE_ATTR}] {
-  top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
-  left: 44px !important;
+  top: calc(var(--dsh-header-centre, 25px) - 22px) !important;
+  left: 50px !important;
 }
 
 /* The bottom workbench on a phone.
@@ -1174,8 +1209,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 
 /* The button that opens the header's collapsed actions. */
 [${ACTIONS_ATTR}] {
-  top: calc(var(--dsh-header-centre, 25px) - 18px) !important;
-  right: 8px !important;
+  top: calc(var(--dsh-header-centre, 25px) - 22px) !important;
+  right: 2px !important;
 }
 
 /* The entry that opens the usage sheet. It is a row of the model menu, so
@@ -1209,8 +1244,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 [${MENU_ATTR}] svg,
 [${TABS_TOGGLE_ATTR}] svg,
 [${ACTIONS_ATTR}] svg {
-  width: 18px !important;
-  height: 18px !important;
+  width: 20px !important;
+  height: 20px !important;
   display: block !important;
 }
 
@@ -1899,9 +1934,9 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         button.setAttribute('aria-expanded', 'false')
         button.innerHTML =
           '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
-          '<circle cx="3.5" cy="8" r="1.1" fill="currentColor"/>' +
-          '<circle cx="8" cy="8" r="1.1" fill="currentColor"/>' +
-          '<circle cx="12.5" cy="8" r="1.1" fill="currentColor"/></svg>'
+          '<circle cx="3.5" cy="8" r="1.2" fill="currentColor"/>' +
+          '<circle cx="8" cy="8" r="1.2" fill="currentColor"/>' +
+          '<circle cx="12.5" cy="8" r="1.2" fill="currentColor"/></svg>'
         button.addEventListener('click', () => {
           const root = document.documentElement
           const open = root.getAttribute(ACTIONS_OPEN_ATTR) === 'open'

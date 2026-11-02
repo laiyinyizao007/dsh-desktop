@@ -307,6 +307,17 @@ plugin's own winning the cascade, or a rule lost in a merge. What it
 cannot catch is a class that was renamed outright: the surface is then
 simply not found, and the plugin has no other way of knowing it is there.
 
+## The row of actions under a message
+
+Upstream hides the copy, the like and the comment until the pointer comes
+near. A phone has no pointer to hover with, and a tap counts as a hover —
+so the row turned up on the second tap, and the first was spent finding out
+that it was there at all.
+
+On a phone the row is simply shown. The elements upstream hides from a
+screen reader are hidden with a clip rather than an opacity, so this
+uncovers nothing that was meant to stay unseen.
+
 ## The room below the composer
 
 The header takes its height off the top of the conversation, so the composer
