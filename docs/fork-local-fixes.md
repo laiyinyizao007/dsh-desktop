@@ -11,7 +11,7 @@
 | 修复 | 分支 / 提交 | 推送状态 | 跟踪 | 状态 |
 |------|-------------|----------|------|------|
 | Windows 标准用户下 Word 模板 worker 启动失败（`EPERM mkdir C:\WINDOWS\dsh-acl-locks`） | `fix/docx-worker-windows-temp` / `32d8545` | 已推到 fork | fork Issue #1 | 使用中 |
-| 窗口内安装 / 卸载插件市场被拒（403 `Request rejected.`） | `fix/market-installer-connection-fence` / `71a2c71` | 已推到 fork，**未向上游提 issue / PR** | 本文第 4 节 | 使用中 |
+| 窗口内安装 / 卸载插件市场被拒（推断为 403 `Request rejected.`） | `fix/market-installer-connection-fence` / `71a2c71` | 已推到 fork，**未提 PR**；已在上游 #831 留言 | 本文第 4 节、上游 #831 / #833 | 使用中 |
 | （弃用）在 Harness Shell 里补回 Origin | `fix/shell-forward-origin` / `cda4dde` | 仅本地 | 本文第 4.5 节 | **不再使用**，违背上游设计 |
 
 ## 3. 本地构建分支 `build/local`
@@ -49,7 +49,7 @@ npm run build
 
 ### 4.1 现象
 
-在 Desktop **窗口内**点"安装插件市场"，界面先显示安装中，随后回到原状，没有任何错误提示。同样的操作在普通浏览器标签页里打开 Harness 地址则正常。能力库（dsh-skill-mcp-manager）的开关报 `untrusted origin` 也是同一原因。
+在 Desktop **窗口内**点"安装插件市场"，界面没有明显变化，或先显示安装中随后回到原状，没有任何错误提示（上游 issue #831 描述为"点了没反应"；两种表现是否同源见 4.7）。同样的操作在普通浏览器标签页里打开 Harness 地址则正常。能力库（dsh-skill-mcp-manager）的开关报 `untrusted origin` 也是同一原因。
 
 ### 4.2 原因：两条规则不一致
 
@@ -95,7 +95,18 @@ flowchart LR
 
 要实测，须在从没装过 DSH 的环境里装官方 v0.13.0，再在窗口内点一次"安装插件市场"。2026-11-01 决定暂不实测。
 
-### 4.7 对上游的处理
+### 4.7 上游的相关 issue / PR 与我们的处理（2026-11-02 更新）
 
-- 2026-11-01 决定：**暂不向上游提 issue 或 PR**。理由：问题只影响全新 profile，且上述推断未在官方安装包上实测。
-- 若以后要提：先完成 4.6 的实测，再只提 issue（写现象、原因、建议修法，由维护者选方向）；维护者认可后再以 `fix/market-installer-connection-fence` 开 PR。
+群里也有人遇到"插件市场按钮点了没反应"，上游已有对应记录：
+
+- **issue #831**：Windows 上点"安装插件市场"完全无反馈。作者判断为"点击根本没发出请求"，根因归于渲染层：按钮在首次 `status` 探测未返回时被禁用，且 `readStatus()` 没有超时。
+- **PR #833**（他人提交，未合并）：给请求加 10 秒超时，并在探测期间显示加载态。**它不改后端的信任检查。**
+
+我们的判断（**推断，未实测**）：#831 里"日志没有 `pnpm shim written`、也没有 warn"这个证据，被 403 拒掉的请求同样会产生，所以不能排除 4.2 的原因；作者手动 POST 成功时**显式加了** `Origin` 头，而窗口里的真实请求没有这个头，这个对照不能说明窗口内链路正常。若真是 403，#833 合并后用户只会从"没反应"变成"转一圈后显示失败"，仍装不上。#831 作者同时提到有 Harness 重启，也可能确实是另一个问题。
+
+处理：
+
+- 没有新开 issue，避免重复。
+- 已由本 fork 所有者在 **#831 下留言**，说明 403 假设，并给出验证方法：在窗口里按 F12 → Network，点按钮，看 `/dsh-desktop/market-installer/install` 的状态码；若是 403，则 #833 不足以修复。
+- 不提 PR。等上游回应：若确认是 403，再以 `fix/market-installer-connection-fence` 开 PR；若是别的原因，本 fork 的修复仍可保留自用（它让写请求遵守 Harness 的通用规则，且比原来多验证会话 cookie）。
+- 仍未做的实测：在从没装过 DSH 的环境装官方 v0.13.0，窗口内点按钮并看 Network 状态码。
