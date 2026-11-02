@@ -131,10 +131,16 @@ async function resolveLiveEndpoint() {
   const deadline = Date.now() + 180_000
   let lastError = 'no harness URL found in the log'
   let attempt = 0
+  // The last endpoint that was read. The log is truncated whenever the
+  // harness restarts, and a truncated log says nothing about whether the
+  // harness is running: the token it issued may well still be the live one.
+  // Dropping it turned a log rotation into a disconnected phone.
+  let cached = undefined
   while (Date.now() < deadline) {
     attempt += 1
-    const candidate = await readHarnessEndpoint()
+    const candidate = (await readHarnessEndpoint()) ?? cached
     if (candidate) {
+      cached = candidate
       const base = (args.harness ?? candidate.base).replace(/\/$/, '')
       const token = args.token ?? candidate.token
       const accepted = await waitForLiveToken(base, token)
