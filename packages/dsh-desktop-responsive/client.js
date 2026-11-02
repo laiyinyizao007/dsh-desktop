@@ -1012,6 +1012,19 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   height: var(--dsh-visual-height, 100%) !important;
 }
 
+/* ── The space below the composer ─────────────────────────────────────────
+   The header takes its height off the top of the conversation, so the
+   composer leaves the same room below it. Without that the composer sits
+   on the bottom edge of the screen and its lower half is cut off.
+
+   The room is the header's own height, which the script publishes: with the
+   view tabs open the header is taller, and the composer moves down with
+   it. */
+:root[data-dshr-mode='phone'] ${A.frame} {
+  box-sizing: border-box !important;
+  padding-bottom: max(var(--dsh-header-height, 44px), env(safe-area-inset-bottom)) !important;
+}
+
 /* ── The collapsed rail ───────────────────────────────────────────────────
    The rail is 56 px wide on Linux and Windows without a title bar — a
    sixth of a phone screen spent on icons. The drawer replaces it, and the
@@ -1945,6 +1958,11 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // header is left with its title alone.
         const centre = rect.y + rect.height / 2 - visibleOffset()
         root.style.setProperty('--dsh-header-centre', `${Math.round(centre)}px`)
+        // The header's own height, so that the composer can leave the same
+        // room below it that the header takes above.
+        const header = document.querySelector(A.conversationHeader)
+        const headerHeight = header === null ? 0 : Math.round(header.getBoundingClientRect().height)
+        if (headerHeight > 0) root.style.setProperty('--dsh-header-height', `${headerHeight}px`)
       }
 
       /**

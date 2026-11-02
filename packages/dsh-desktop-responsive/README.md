@@ -307,6 +307,15 @@ plugin's own winning the cascade, or a rule lost in a merge. What it
 cannot catch is a class that was renamed outright: the surface is then
 simply not found, and the plugin has no other way of knowing it is there.
 
+## The room below the composer
+
+The header takes its height off the top of the conversation, so the composer
+leaves the same room below it. Without that the composer sits on the bottom
+edge of the screen and its lower half is cut off.
+
+The room is the header's own height, which the script publishes: with the
+view tabs open the header is taller, and the composer moves down with it.
+
 ## Reading comfort
 
 **Tables.** Upstream keeps a wide table's horizontal scroll bar hidden until

@@ -1013,6 +1013,17 @@ describe('dsh-desktop-responsive client', () => {
     expect(root.getAttribute('data-dshr-drift')).toContain('project-console')
   })
 
+  it('leaves the composer the same room below it as the header takes above', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    // The header takes its height off the top of the conversation, so the
+    // composer leaves the same room below it — without that it sits on the
+    // bottom edge and its lower half is cut off.
+    expect(style.textContent).toMatch(
+      /data-dshr-mode='phone'\] \[data-dsh-region="layout"\][^}]*padding-bottom: max\(var\(--dsh-header-height/
+    )
+  })
+
   it('injects its stylesheet exactly once', async () => {
     buildFrame({ width: 390 })
     await flush()
