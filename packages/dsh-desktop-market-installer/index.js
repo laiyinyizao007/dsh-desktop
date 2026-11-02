@@ -156,9 +156,15 @@ function hasForwardedAddress(req) {
   )
 }
 
-export function isTrustedRequest(req, mutation = false) {
+export function isTrustedRequest(req, mutation = false, connection = undefined) {
   if (!isLoopback(req.socket.remoteAddress) || hasForwardedAddress(req)) return false
   if (!mutation) return true
+
+  // The Desktop window forwards page requests through the Harness shell, which deliberately sends no Origin
+  // (test/harness-shell.test.ts). Defer to the Harness Connection fence instead of demanding one: it accepts a
+  // missing Origin, rejects a cross-site or foreign one, and requires the HttpOnly SameSite=Strict browser
+  // session cookie, which a cross-site page cannot attach. Without that service keep the stricter rule.
+  if (connection) return connection.requestRejection(req) === undefined
 
   const origin = req.headers.origin
   const host = req.headers.host
@@ -1134,7 +1140,7 @@ export async function apply(ctx) {
           sendJson(res, 405, { error: 'Method not allowed.' })
           return
         }
-        if (!isTrustedRequest(req, true)) {
+        if (!isTrustedRequest(req, true, webCtx.get('connection'))) {
           sendJson(res, 403, { error: 'Request rejected.' })
           return
         }
@@ -1169,7 +1175,7 @@ export async function apply(ctx) {
           sendJson(res, 405, { error: 'Method not allowed.' })
           return
         }
-        if (!isTrustedRequest(req, true)) {
+        if (!isTrustedRequest(req, true, webCtx.get('connection'))) {
           sendJson(res, 403, { error: 'Request rejected.' })
           return
         }

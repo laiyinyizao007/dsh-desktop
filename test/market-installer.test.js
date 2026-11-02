@@ -459,4 +459,37 @@ describe('desktop plugin market installer', () => {
     ).toBe(false)
     expect(isTrustedRequest(request({}, '192.168.1.5'))).toBe(false)
   })
+
+  it('defers mutation trust to the Harness Connection fence when it is available', () => {
+    const request = (headers = {}, remoteAddress = '127.0.0.1') => ({
+      headers,
+      socket: { remoteAddress }
+    })
+    const fence = (rejection) => {
+      const seen = []
+      return { seen, requestRejection: (req) => (seen.push(req), rejection) }
+    }
+
+    // The Desktop shell forwards window requests without an Origin; the fence admits the session cookie.
+    const shellForwarded = request({ host: '127.0.0.1:51923', cookie: 'session=owned' })
+    const admitted = fence(undefined)
+    expect(isTrustedRequest(shellForwarded, true, admitted)).toBe(true)
+    expect(admitted.seen).toEqual([shellForwarded])
+    expect(isTrustedRequest(shellForwarded, true)).toBe(false)
+
+    expect(isTrustedRequest(request({ host: '127.0.0.1:51923' }), true, fence(401))).toBe(false)
+    expect(
+      isTrustedRequest(
+        request({ origin: 'https://attacker.example', host: '127.0.0.1:51923' }),
+        true,
+        fence(403)
+      )
+    ).toBe(false)
+
+    // Socket and proxy checks still run first, so the fence cannot widen them.
+    const unused = fence(undefined)
+    expect(isTrustedRequest(request({}, '192.168.1.5'), true, unused)).toBe(false)
+    expect(isTrustedRequest(request({ forwarded: 'for=127.0.0.1' }), true, unused)).toBe(false)
+    expect(unused.seen).toEqual([])
+  })
 })
