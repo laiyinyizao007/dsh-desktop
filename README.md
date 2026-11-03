@@ -137,7 +137,9 @@ DeepSeek Harness and its dependencies remain subject to their respective upstrea
 ## Plugins
 
 - **`dsh-desktop-responsive`** — the phone-width layout. It lives in its own
-  repository and is taken here as a dependency, from a sibling checkout
+  repository — <https://github.com/laiyinyizao007/dsh-desktop-responsive> —
+  and is taken here as a dependency, from a sibling checkout
   (`../dsh-desktop-responsive`); the entry under `packages/` is a link to
   it. The plugin adapts a layout it does not own, so it is published on
-  its own rather than carried here.
+  its own rather than carried here. A published build of the desktop would
+  take it by its address instead.
