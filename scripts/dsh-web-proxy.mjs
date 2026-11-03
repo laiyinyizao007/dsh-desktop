@@ -25,6 +25,7 @@ import { request as httpsRequest } from 'node:https'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
+import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mjs'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
 
@@ -787,6 +788,36 @@ function clientEntryPath(id) {
   return null
 }
 
+/**
+ * The machine's power state, read once and shared.
+ *
+ * Reading it costs a subprocess — the kernel log is read to count the
+ * under-voltage events — and the badge polls it every few seconds, so the
+ * reading is cached for a short while. A read that fails is reported as
+ * `null`: the badge then says "unknown", which is honest, instead of
+ * claiming a healthy rail it never saw.
+ */
+const VOLT_STATE_TTL_MS = 5000
+let voltStateCache = { expiresAt: -1, state: null, pending: null }
+
+function voltState() {
+  if (voltStateCache.state !== null && voltStateCache.expiresAt > Date.now()) {
+    return Promise.resolve(voltStateCache.state)
+  }
+  if (voltStateCache.pending !== null) return voltStateCache.pending
+  voltStateCache.pending = readVoltState()
+    .then((state) => {
+      voltStateCache = { expiresAt: Date.now() + VOLT_STATE_TTL_MS, state, pending: null }
+      return state
+    })
+    .catch((error) => {
+      console.error(`dsh web proxy: the power state could not be read: ${error.message}`)
+      voltStateCache = { expiresAt: Date.now() + VOLT_STATE_TTL_MS, state: null, pending: null }
+      return null
+    })
+  return voltStateCache.pending
+}
+
 const server = createServer((clientRequest, clientResponse) => {
   const requestUrl = clientRequest.url ?? '/'
 
@@ -820,6 +851,34 @@ const server = createServer((clientRequest, clientResponse) => {
       clientResponse.end('dsh web: a session is required for this request\n')
       return
     }
+  }
+
+  // The machine's power state, for the badge the page carries.
+  //
+  // It is read from the kernel log and the voltage sensor, so it says
+  // something about the machine rather than about the page — but it still
+  // needs a session, which the guard above has already asked for: the proxy
+  // is reachable from outside the machine through the tunnel, and the
+  // readings (temperature, load, uptime) are the machine's business rather
+  // than the world's. The badge is only on a page that has a session, so
+  // requiring one costs nothing.
+  if (requestUrl === VOLT_ENDPOINT || requestUrl === `${VOLT_ENDPOINT}/`) {
+    voltState()
+      .then((state) => {
+        clientResponse.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store'
+        })
+        clientResponse.end(`${JSON.stringify(state)}\n`)
+      })
+      .catch((error) => {
+        clientResponse.writeHead(503, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store'
+        })
+        clientResponse.end(`${JSON.stringify({ error: error.message })}\n`)
+      })
+    return
   }
 
   const target = rewriteUrl(requestUrl, carriesSession)
@@ -1027,7 +1086,10 @@ const server = createServer((clientRequest, clientResponse) => {
           delete page['content-length']
           delete page['transfer-encoding']
           try {
-            const body = Buffer.from(cacheableBundleUrl(raw.toString('utf8')), 'utf8')
+            // The page carries the badge that shows the machine's power
+            // state, so a brownout is visible to whoever is looking at it.
+            const rewritten = injectVoltBadge(cacheableBundleUrl(raw.toString('utf8')))
+            const body = Buffer.from(rewritten, 'utf8')
             page['content-length'] = String(body.length)
             clientResponse.writeHead(upstreamResponse.statusCode ?? 502, page)
             clientResponse.end(body)

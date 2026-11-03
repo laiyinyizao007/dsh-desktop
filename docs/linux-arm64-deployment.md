@@ -287,6 +287,26 @@ would restart the proxy whenever the Harness restarts, dropping live
 WebSocket clients and leaving the URL answering 502 in the gap. The proxy
 reads the token from the log on every request, so it survives on its own.
 
+### The power badge
+
+On a Pi the browser window is often the only screen, so the proxy injects a
+small badge into the root page: it shows the rail's state, the temperature
+and the load, and it turns amber when the kernel log holds under-voltage
+events and red while the rail is sagging right now.
+
+The readings live in `scripts/dsh-web-volt.mjs`, and the proxy serves them at
+`/__volt`. Two things are deliberate:
+
+- **A source that cannot be read is `null`, not "fine".** No voltage sensor,
+  no readable kernel log — the badge says "unknown" instead of claiming a
+  healthy rail it never saw.
+- **The endpoint needs a session.** It is reachable from outside the machine
+  through the tunnel, and the readings are the machine's business rather
+  than the world's.
+
+The badge polls every 5 s and the proxy caches the reading for the same 5 s,
+so the kernel log is read about once a poll.
+
 ---
 
 ## 6. Phone access
