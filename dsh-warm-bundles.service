@@ -1,0 +1,15 @@
+[Unit]
+Description=Warm the DSH client bundles so the first page load is fast
+Documentation=https://github.com/dataelement/dsh-desktop
+After=dsh-web-proxy.service dsh-web.service
+Wants=dsh-web-proxy.service
+
+[Service]
+Type=oneshot
+User=averypi
+Group=averypi
+WorkingDirectory=/home/averypi/dsh-desktop
+Environment=DSH_HOME=/home/averypi/.dsh
+Environment=DSH_HARNESS_LOG=/var/log/dsh-web.log
+Environment=DSH_PROXY_PORT=43128
+ExecStart=/usr/bin/node /home/averypi/dsh-desktop/scripts/dsh-warm-bundles.mjs

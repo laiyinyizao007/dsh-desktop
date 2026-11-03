@@ -1,0 +1,14 @@
+[Unit]
+Description=Warm the DSH client bundles every 10 minutes
+Documentation=https://github.com/dataelement/dsh-desktop
+
+[Timer]
+# The bundles are content-addressed: a rebuilt bundle gets a new revision
+# and a new URL, so the warm run has to happen again after a rebuild. The
+# Harness restart that a rebuild causes is what usually invalidates them.
+OnBootSec=3min
+OnUnitActiveSec=10min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
