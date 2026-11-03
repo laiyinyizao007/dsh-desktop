@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -132,4 +132,23 @@ it('acknowledges only a managed applied package and still detects subsequent ext
   expect((await status.read()).packages).toEqual(['other'])
   snapshot.local = 'edited-after-install'
   expect((await status.read()).packages).toEqual(['other', 'local'])
+})
+
+describe('the restart-status poll', () => {
+  it('is not frequent enough to be a request every few seconds', async () => {
+    const client = await readFile(
+      join(import.meta.dirname, '..', 'packages', 'dsh-desktop-workbenches', 'client.js'),
+      'utf8'
+    )
+
+    // The poll watches whether the Host needs a restart. A restart is
+    // something a person acts on, so the interval only has to be short
+    // enough that a notice appears promptly — it does not have to be short
+    // enough to notice a change that cannot be acted on any faster.
+    const intervals = [...client.matchAll(/setTimeout\(poll,\s*(\d+)\)/g)].map((match) => Number(match[1]))
+    expect(intervals.length).toBeGreaterThan(0)
+    for (const interval of intervals) {
+      expect(interval).toBeGreaterThanOrEqual(30_000)
+    }
+  })
 })

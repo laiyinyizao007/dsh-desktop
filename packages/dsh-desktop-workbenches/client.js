@@ -314,7 +314,18 @@ window.__ModuleLoader__.load({
         let timer
         const poll = async () => {
           await this.refreshRestartStatus()
-          if (!stopped && !this.disposed) timer = setTimeout(poll, 5000)
+          // Thirty seconds rather than five.
+          //
+          // What this watches is whether the Host needs a restart, and a
+          // restart is something a person acts on — the notice it raises
+          // does not go away on its own. Polling it every five seconds
+          // meant a request every five seconds for the life of the page,
+          // to notice a change that nobody can act on any faster.
+          //
+          // The first answer arrives with the page itself, so the state is
+          // known before this loop starts; the loop is only there to catch
+          // a restart that happens later.
+          if (!stopped && !this.disposed) timer = setTimeout(poll, 30000)
         }
         poll()
         return () => { stopped = true; clearTimeout(timer) }
