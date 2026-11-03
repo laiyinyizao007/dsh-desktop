@@ -24,6 +24,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
+import { gzipSync } from 'node:zlib'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
 
@@ -44,6 +45,107 @@ const upstream = new URL(args.upstream ?? process.env.DSH_UPSTREAM ?? 'http://12
 const port = args.port ?? 43128
 
 /**
+ * The shape of the plugin-graph URLs this proxy advertises.
+ *
+ * The number is part of the URL, so changing the shape gives every bundle
+ * a new URL — which is what is wanted when the way a bundle is delivered
+ * changes: an edge cache that holds an entry for the old shape would
+ * otherwise keep serving it.
+ */
+const BUNDLE_URL_FORMAT = 2
+
+/**
+ * Whether the Session list is trimmed on its way through this proxy.
+ *
+ * The Harness answers `session/list` with every Session it can see, and each
+ * one carries the full projection block. On a machine with a few hundred
+ * Sessions that block is measured in megabytes, and 87% of it is
+ * `contextHeaders` — the tool definitions that were sent to the model, one
+ * snapshot per turn. A list of conversations needs a title and a timestamp,
+ * not the tool schema of every turn; and no client reads the rest of what
+ * the block carries.
+ *
+ * Trimming happens here rather than in the Harness because the proxy is
+ * this deployment's own code. The Harness is a released package: changing
+ * what it serves means replacing the package and restarting the Harness,
+ * which drops the sessions in flight. The trimmed list has the same shape
+ * as the one the Harness produces, so a client cannot tell the difference.
+ *
+ * Set DSH_PROXY_SESSION_LIST_TRIM=0 to pass the list through untouched.
+ */
+const TRIM_SESSION_LIST = process.env.DSH_PROXY_SESSION_LIST_TRIM !== '0'
+
+/**
+ * How many `contextHeaders` snapshots to keep — the newest ones.
+ *
+ * A snapshot is the tool set as it was at one point in the conversation, so
+ * the newest one is the current context; the older ones are history that
+ * only the context viewer draws, and each of them is a few kilobytes. Set
+ * DSH_PROXY_SESSION_LIST_HEADERS=0 to drop them entirely.
+ */
+const SESSION_LIST_HEADER_KEEP = Math.max(0, Number(process.env.DSH_PROXY_SESSION_LIST_HEADERS ?? 1))
+
+/**
+ * Projection values that no client reads and that a list of conversations
+ * does not need. Each one is a per-Session computation on the Harness side
+ * as well as bytes on the wire.
+ */
+const SESSION_LIST_DROP_VALUES = new Set([
+  'turnOutline',
+  'tokenUsage',
+  'sessionStats',
+  'contextActivity',
+  'subagentTiming',
+  'subagentCatalog',
+  'permissions',
+  'modelSelection',
+  'imageLimits',
+  'sessionListMetadata'
+])
+
+/**
+ * Drop the parts of a Session list that a list of conversations does not use.
+ *
+ * The payload is the Harness's own response, so the shape is left alone —
+ * only the projection values are pruned.
+ *
+ * @param payload - the parsed `session/list` response
+ * @returns the same payload, trimmed
+ */
+function trimSessionList(payload) {
+  const items = payload?.result?.value?.items
+  if (!Array.isArray(items)) return payload
+  for (const item of items) {
+    const values = item?.projections?.values
+    if (values === undefined || values === null) continue
+    for (const key of SESSION_LIST_DROP_VALUES) delete values[key]
+    const context = values.contextHeaders
+    if (context !== undefined && Array.isArray(context?.headers)) {
+      values.contextHeaders = {
+        ...context,
+        headers: context.headers.slice(-SESSION_LIST_HEADER_KEEP)
+      }
+    }
+  }
+  return payload
+}
+
+/**
+ * How long a trimmed Session list is reused, in milliseconds.
+ *
+ * Building the list costs the Harness a projection read per Session, and the
+ * page asks for it on every load. The list changes when a Session changes,
+ * which is not more than a couple of times a second while working, so a
+ * second of reuse removes the repeated cost without holding a stale list
+ * long enough to be noticed. Set DSH_PROXY_SESSION_LIST_CACHE_MS=0 to
+ * rebuild it every time.
+ */
+const SESSION_LIST_CACHE_MS = Math.max(0, Number(process.env.DSH_PROXY_SESSION_LIST_CACHE_MS ?? 1000))
+
+/** The most recently built Session list, and when it goes stale. */
+let sessionListCache = { expiresAt: 0, body: null, headers: null }
+
+/**
  * The launch token the Harness printed most recently.
  *
  * The Harness writes one `dsh web: http://.../?token=...` line per start, so
@@ -52,8 +154,27 @@ const port = args.port ?? 43128
  * line simply does not match, and the previous token stays in use until the
  * new one is complete.
  */
+/**
+ * The launch token, cached against the log's identity.
+ *
+ * The log is append-only and grows with every Harness start, so reading it
+ * and matching every token in it on every request gets slower as it fills.
+ * The file's mtime and size identify its content, so the parse is repeated
+ * only when one of them changes — which is exactly when the token can have
+ * changed, including the case where the last line is still being written.
+ */
+let tokenCache = { mtimeMs: -1, size: -1, token: undefined }
+
 function currentLaunchToken() {
-  if (!existsSync(logPath)) return undefined
+  let stats
+  try {
+    stats = statSync(logPath)
+  } catch {
+    return undefined
+  }
+  if (stats.mtimeMs === tokenCache.mtimeMs && stats.size === tokenCache.size) {
+    return tokenCache.token
+  }
   let content
   try {
     content = readFileSync(logPath, 'utf8')
@@ -61,8 +182,9 @@ function currentLaunchToken() {
     return undefined
   }
   const matches = [...content.matchAll(/\?token=([A-Za-z0-9_-]+)/g)]
-  const last = matches.at(-1)
-  return last?.[1]
+  const token = matches.at(-1)?.[1]
+  tokenCache = { mtimeMs: stats.mtimeMs, size: stats.size, token }
+  return token
 }
 
 /** The Harness log, or an empty string when it cannot be read. */
@@ -110,10 +232,28 @@ function harnessStartedAt() {
   }
 }
 
-/** The PID of the running Harness, if it can be found. */
+/**
+ * The PID of the running Harness, if it can be found.
+ *
+ * The lookup scans every entry in /proc and reads each one's cmdline, which
+ * on a busy machine is a thousand-odd file reads. That ran on every request
+ * that needed the root page, so the result is cached and revalidated with a
+ * single read: a cached PID that no longer answers has exited, and the
+ * Harness's PID is not reused while the old process is gone.
+ */
+let cachedHarnessPid = null
+
 function harnessPid() {
   const proc = process.env.DSH_HARNESS_PID
   if (proc !== undefined && /^[0-9]+$/.test(proc)) return Number(proc)
+  if (cachedHarnessPid !== null) {
+    try {
+      readFileSync(`/proc/${cachedHarnessPid}/cmdline`, 'utf8')
+      return cachedHarnessPid
+    } catch {
+      cachedHarnessPid = null
+    }
+  }
   try {
     for (const entry of readdirSync('/proc')) {
       if (!/^[0-9]+$/.test(entry)) continue
@@ -124,7 +264,8 @@ function harnessPid() {
         continue
       }
       if (cmd.includes('dsh') && cmd.includes('web') && cmd.includes('43129')) {
-        return Number(entry)
+        cachedHarnessPid = Number(entry)
+        return cachedHarnessPid
       }
     }
   } catch {
@@ -151,10 +292,40 @@ function repoModules() {
  *
  * Synchronous on purpose: the diagnosis runs inside a request handler and
  * has to answer before the response is written.
+ *
+ * Fetching it spawns a Node process, which costs a few hundred milliseconds
+ * and blocks this proxy's event loop while it runs. The page only changes
+ * when the Harness restarts — its start time changes with it, and so does
+ * the launch token the page is minted from — so the result is cached and
+ * the cache is invalidated by either of those.
  */
+let rootHtmlCache = { startedAt: -1, token: undefined, html: null }
+
 function rootHtml() {
   const token = currentLaunchToken()
   if (token === undefined) return null
+  const startedAt = harnessStartedAt()
+  if (
+    rootHtmlCache.html !== null &&
+    rootHtmlCache.startedAt === startedAt &&
+    rootHtmlCache.token === token
+  ) {
+    return rootHtmlCache.html
+  }
+  const html = fetchRootHtml(token)
+  if (html === null) return null
+  rootHtmlCache = { startedAt, token, html }
+  return html
+}
+
+/**
+ * Ask the Harness for its root page, following the token exchange.
+ *
+ * The exchange has to happen in a separate process: the Harness signs its
+ * session cookie against the request authority, and the cookie this call
+ * mints must not be reused for the caller's own request.
+ */
+function fetchRootHtml(token) {
   const url = new URL(upstream.origin)
   const script = `
     const http = require('node:http')
@@ -206,6 +377,57 @@ function rootHtml() {
 }
 
 /**
+ * The plugin-graph URL in the form an edge cache will keep.
+ *
+ * The Harness advertises its plugin graph as
+ * `plugins/??<list of client.js>&rev=<hash>`. The `??` is what makes a URL
+ * parser treat the whole list as a query string, so the path a cache sees
+ * is only `/plugins/` — no file extension, nothing to key a cache entry on.
+ * An edge cache decides what to keep from the path's extension, so these
+ * bundles were never cached: every page load pulled the whole plugin graph
+ * back through the tunnel, over a link that is several megabits wide.
+ *
+ * Moving the revision into a real query string leaves a path that ends in
+ * `.js`, which is what the cache needs, and the revision still makes the
+ * URL change whenever the bytes do. The `proxy` marker names the shape of
+ * the URL this proxy produced, so a change to the shape is a different
+ * URL and never collides with a cache entry made for the old one.
+ *
+ * @param value - the URL as it appears in the Harness's HTML
+ * @returns the URL with the plugin list in the path
+ */
+function cacheableBundleUrl(value) {
+  const pattern = new RegExp(`(plugins)/\\?\\?([^"']*?)&amp;rev=([^"'&]+)`, 'g')
+  return value.replace(pattern, `$1/$2?rev=$3&proxy=${BUNDLE_URL_FORMAT}`)
+}
+
+/**
+ * The Harness's own form of a plugin-graph URL.
+ *
+ * The reverse of `cacheableBundleUrl`: the Harness reads the plugin list
+ * from the part after `??`, so a request that arrives in the cacheable
+ * form has to be turned back before it is forwarded.
+ *
+ * @param rawUrl - the request URL as it arrived
+ * @returns the URL in the Harness's form, or the original when it is not one
+ */
+function harnessBundleUrl(rawUrl) {
+  if (!rawUrl.startsWith('/plugins/')) return rawUrl
+  if (rawUrl.includes('/??')) return rawUrl
+  const questionMark = rawUrl.indexOf('?')
+  if (questionMark < 0) return rawUrl
+  const path = rawUrl.slice(0, questionMark)
+  const search = rawUrl.slice(questionMark + 1)
+  if (!path.endsWith('.js')) return rawUrl
+  // Only the revision is passed on: the Harness derives the revision from
+  // the plugin list, so any extra parameter would make the two disagree
+  // and the bundle would not be found.
+  const revision = /^rev=([^&]*)/.exec(search)?.[1]
+  if (revision === undefined) return rawUrl
+  return `/plugins/??${path.slice('/plugins/'.length)}&rev=${revision}`
+}
+
+/**
  * Rewrite the request URL for the upstream.
  *
  * The Harness mints its session cookie only from a root request that carries
@@ -221,7 +443,7 @@ function rootHtml() {
  * which would truncate the path to `/plugins/` and 404 the request.
  */
 function rewriteUrl(rawUrl, hasSessionCookie) {
-  const raw = rawUrl ?? '/'
+  const raw = harnessBundleUrl(rawUrl ?? '/')
   // Split off a real query string, if any. A `??` starts Cordis's plugin
   // list, not a query, so only a single `?` marks one.
   const questionMark = raw.indexOf('?')
@@ -234,11 +456,21 @@ function rewriteUrl(rawUrl, hasSessionCookie) {
   // browser holds a version-1 cookie from the root page, which that route
   // does not accept, so the token has to be injected here even though the
   // request already carries a cookie.
-  const needsToken = !hasSessionCookie || path === '/connect'
+  //
+  // The token is only good for the root page: the Harness exchanges it for a
+  // session cookie there and nowhere else. Appending it to any other path
+  // turns the request into one the Harness answers with 404 — and a 404 that
+  // an edge cache is willing to keep.
+  const isRoot = path === '/' || path === '' || path === './'
+  const needsToken = (isRoot && !hasSessionCookie) || path === '/connect'
 
   if (needsToken) {
     const token = currentLaunchToken()
-    if (token) {
+    // A URL that already carries a token must not get a second one. The
+    // Harness prints its root URL with the token in it, and a person who
+    // copies that URL to this proxy would otherwise send it upstream as
+    // `?token=a&token=b` — which the Harness answers with 401.
+    if (token && !/[?&]token=/.test(search)) {
       search = search ? `${search}&token=${encodeURIComponent(token)}` : `?token=${encodeURIComponent(token)}`
     }
   } else {
@@ -255,11 +487,77 @@ function rewriteUrl(rawUrl, hasSessionCookie) {
   }
 }
 
-/** Whether the browser already holds the Harness session cookie. */
-function hasSessionCookie(headers) {
+/**
+ * The authority a session cookie was minted for, if it can be read.
+ *
+ * The cookie carries a base64 payload that names the authority it belongs
+ * to. The Harness binds the cookie to that authority and rejects a request
+ * whose authority differs, so the proxy can tell whether the cookie in the
+ * browser's hand is the one this request needs — and, when it is not,
+ * exchange a fresh one instead of forwarding a cookie that would be
+ * refused.
+ */
+function cookieAuthority(value) {
+  const equals = value.indexOf('=')
+  if (equals < 0) return undefined
+  // The value is `v1.<payload>.<signature>`; only the payload carries the
+  // authority. Decoding the whole value would fold the signature into the
+  // JSON and fail to parse, which would make every cookie look unusable.
+  const payload = value.slice(equals + 1).split('.')[1]
+  if (payload === undefined || payload === '') return undefined
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'))
+    return typeof decoded.authority === 'string' ? decoded.authority : undefined
+  } catch {
+    // A cookie that does not decode is treated as unusable.
+    return undefined
+  }
+}
+
+/**
+ * The session cookies in a request, reduced to the ones this authority can use.
+ *
+ * A browser can hold session cookies for several authorities at once — the
+ * public domain and the LAN address, say — and it sends every cookie whose
+ * domain matches to a host that matches. The Harness binds each cookie to
+ * the authority it was minted for and refuses a request whose cookie belongs
+ * to another one, so the cookies for other authorities are dropped here
+ * instead of being forwarded.
+ *
+ * Returns the cookie header to send upstream, or undefined when the request
+ * should carry no session cookie at all.
+ */
+function sessionCookiesFor(headers, authority) {
   const cookie = headers.cookie
-  if (typeof cookie !== 'string') return false
-  return cookie.split(';').some((segment) => segment.trim().startsWith('dsh-auth-'))
+  if (typeof cookie !== 'string') return undefined
+  const kept = []
+  let usable = false
+  for (const segment of cookie.split(';')) {
+    const text = segment.trim()
+    if (text === '') continue
+    if (!text.startsWith('dsh-auth-')) {
+      kept.push(text)
+      continue
+    }
+    const minted = cookieAuthority(text)
+    if (minted !== undefined && minted === authority) {
+      kept.push(text)
+      usable = true
+    }
+  }
+  if (!usable) return undefined
+  return kept.join('; ')
+}
+
+/**
+ * Whether the request already carries a session cookie for this authority.
+ *
+ * The authority is the one the request is addressed to — behind nginx that
+ * is the authority nginx normalised the request to, which is what the
+ * Harness will compare against.
+ */
+function hasSessionCookie(headers, authority) {
+  return sessionCookiesFor(headers, authority) !== undefined
 }
 
 /**
@@ -361,13 +659,68 @@ const server = createServer((clientRequest, clientResponse) => {
     return
   }
 
-  const target = rewriteUrl(requestUrl, hasSessionCookie(clientRequest.headers))
+  // The authority this request is addressed to. The Harness binds its
+  // session cookie to the authority it sees, so a cookie minted for a
+  // different one has to be dropped rather than forwarded.
+  const authority = clientRequest.headers.host
+  const carriesSession = hasSessionCookie(clientRequest.headers, authority)
+
+  // Only the root page can be served without a session, and there the
+  // launch token is exchanged for one. Answering anything else here keeps
+  // the failure out of the edge cache: a 404 the cache is willing to keep
+  // would be handed to every later visitor of that URL.
+  if (!carriesSession && requestUrl !== '/connect') {
+    const isRootRequest = requestUrl === '/' || requestUrl === '' || requestUrl.startsWith('/?')
+    if (!isRootRequest) {
+      clientResponse.writeHead(401, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store'
+      })
+      clientResponse.end('dsh web: a session is required for this request\n')
+      return
+    }
+  }
+
+  const target = rewriteUrl(requestUrl, carriesSession)
   const headers = { ...clientRequest.headers }
   // The Harness signs its session cookie against the request authority, so the
   // Host header has to stay the one the browser used. Rewriting it to the
   // upstream authority would make the Harness mint a cookie for a host the
   // browser never talks to, and every later request would come back 401.
   delete headers['content-length']
+  // Only the cookies minted for this authority may travel upstream. A cookie
+  // for another authority — from a different entry point, or from before a
+  // restart — would make the Harness refuse the request; dropping it lets
+  // the launch token that `rewriteUrl` just injected mint a usable one.
+  const usableCookies = sessionCookiesFor(clientRequest.headers, authority)
+  if (usableCookies === undefined) {
+    delete headers.cookie
+  } else if (usableCookies !== clientRequest.headers.cookie) {
+    headers.cookie = usableCookies
+  }
+
+  // The Session list is trimmed below, which needs the body as text. Asking
+  // the Harness for it uncompressed saves the Harness from compressing a
+  // body that is about to be thrown away, and leaves the compressed bytes
+  // to be produced once, after the trim.
+  const trimsSessionList = TRIM_SESSION_LIST && target.path === '/api/session/list'
+  if (trimsSessionList) {
+    // A list that was built moments ago is reused rather than rebuilt: the
+    // Harness reads a projection per Session to produce one, and the page
+    // asks for it on every load.
+    if (sessionListCache.body !== null && sessionListCache.expiresAt > Date.now()) {
+      clientResponse.writeHead(200, sessionListCache.headers)
+      clientResponse.end(sessionListCache.body)
+      return
+    }
+    delete headers['accept-encoding']
+  }
+
+  // The Harness's root page carries the plugin graph, and the URLs in it are
+  // rewritten so that an edge cache can keep them. Rewriting the page means
+  // holding it in memory, so its body is asked for as text.
+  const rewritesHtml = target.path === '/' || target.path === '' || target.path.endsWith('.html')
+  if (rewritesHtml) delete headers['accept-encoding']
 
   const forward = target.protocol === 'https:' ? httpsRequest : httpRequest
   const upstreamRequest = forward(
@@ -384,17 +737,119 @@ const server = createServer((clientRequest, clientResponse) => {
       // The Harness redirects to a relative path after the token exchange, so
       // the Location header stays usable behind the proxy.
       //
-      // The client bundles carry their revision in the query string, and the
-      // Harness derives it from the file's mtime, ctime and size. A browser
-      // that kept an old `plugins/??…&rev=…` URL therefore asks for a
-      // revision the server no longer has, the request 404s, and the module
-      // graph fails with "required client modules failed to activate". The
-      // response is immutable for a given revision, but the *set* of
-      // revisions changes whenever a bundle is rebuilt — so these must not be
-      // cached by the browser.
+      // Cache policy. The client bundles are content-addressed: the
+      // revision in `plugins/??…&rev=<hash>` is derived from the bundle's
+      // mtime, ctime and size, so a given revision always maps to the same
+      // bytes. The upstream Harness already states this — it answers a
+      // revisioned bundle with `public, max-age=31536000, immutable`.
+      //
+      // This proxy used to override that with `no-store, must-revalidate`,
+      // which made every page reload re-download the whole plugin graph
+      // (~4 MB compressed). The override was defending against a stale
+      // revision — a browser asking for a revision the server no longer
+      // has — but that case is already safe: the revision changes with the
+      // bytes, so a stale URL 404s instead of serving wrong content, and
+      // the module graph reports it. A revisioned bundle can therefore be
+      // cached forever.
+      //
+      // A `/plugins/` URL *without* a revision is not content-addressed (the
+      // same path can serve different bytes after a rebuild), so it stays
+      // revalidated. `/assets/*` files carry a build hash in their name and
+      // are immutable for the same reason as a revisioned bundle.
+      const urlWithQuery = `${target.path}${target.search}`
+      const hasRevision = /[?&]rev=/.test(urlWithQuery)
       if (target.path.startsWith('/plugins/')) {
-        responseHeaders['cache-control'] = 'no-store, must-revalidate'
+        responseHeaders['cache-control'] = hasRevision
+          ? 'public, max-age=31536000, immutable'
+          : 'no-cache'
+      } else if (target.path.startsWith('/assets/')) {
+        responseHeaders['cache-control'] = 'public, max-age=31536000, immutable'
+      } else if (target.path.startsWith('/dsh-desktop-logo')) {
+        responseHeaders['cache-control'] = 'public, max-age=86400'
+      } else if (target.path.endsWith('/manifest.webmanifest')) {
+        // The manifest carries no build hash, and a stale one points the
+        // installed app at assets that no longer exist — so it is
+        // revalidated rather than cached.
+        responseHeaders['cache-control'] = 'no-cache'
       }
+
+      // A failure is not worth keeping. An edge cache holds a 404 as
+      // readily as a 200, and one that was caused by a transient fault —
+      // a Harness restart, a bundle that was mid-rebuild — would then be
+      // handed to every later visitor of that URL.
+      if ((upstreamResponse.statusCode ?? 502) >= 400) {
+        responseHeaders['cache-control'] = 'no-store'
+      }
+
+      // The root page is rewritten so that the plugin graph it advertises
+      // points at URLs an edge cache will keep. The page is small, so
+      // holding it in memory costs nothing.
+      if (rewritesHtml && upstreamResponse.statusCode === 200) {
+        const chunks = []
+        upstreamResponse.on('data', (chunk) => chunks.push(chunk))
+        upstreamResponse.on('end', () => {
+          const raw = Buffer.concat(chunks)
+          const page = { ...responseHeaders }
+          delete page['content-length']
+          delete page['transfer-encoding']
+          try {
+            const body = Buffer.from(cacheableBundleUrl(raw.toString('utf8')), 'utf8')
+            page['content-length'] = String(body.length)
+            clientResponse.writeHead(upstreamResponse.statusCode ?? 502, page)
+            clientResponse.end(body)
+          } catch {
+            // A page that cannot be rewritten is served as it arrived.
+            clientResponse.writeHead(upstreamResponse.statusCode ?? 502, page)
+            clientResponse.end(raw)
+          }
+        })
+        clientResponse.on('error', () => {
+          upstreamResponse.destroy()
+        })
+        upstreamResponse.on('error', () => {
+          clientResponse.destroy()
+        })
+        return
+      }
+
+      // The Session list is trimmed rather than streamed, so its body has to
+      // be held in memory before anything can be written. Everything else
+      // is passed through untouched.
+      if (trimsSessionList && upstreamResponse.statusCode === 200) {
+        const chunks = []
+        upstreamResponse.on('data', (chunk) => chunks.push(chunk))
+        upstreamResponse.on('end', () => {
+          const raw = Buffer.concat(chunks)
+          const trimmed = { ...responseHeaders }
+          delete trimmed['content-length']
+          delete trimmed['transfer-encoding']
+          try {
+            const payload = trimSessionList(JSON.parse(raw.toString('utf8')))
+            const body = gzipSync(JSON.stringify(payload))
+            trimmed['content-encoding'] = 'gzip'
+            trimmed['content-length'] = String(body.length)
+            trimmed['vary'] = 'Accept-Encoding'
+            if (SESSION_LIST_CACHE_MS > 0) {
+              sessionListCache = { expiresAt: Date.now() + SESSION_LIST_CACHE_MS, body, headers: trimmed }
+            }
+            clientResponse.writeHead(upstreamResponse.statusCode ?? 502, trimmed)
+            clientResponse.end(body)
+          } catch {
+            // A body that does not parse is forwarded as it arrived, so a
+            // change in the Harness's response shape cannot break the list.
+            clientResponse.writeHead(upstreamResponse.statusCode ?? 502, trimmed)
+            clientResponse.end(raw)
+          }
+        })
+        clientResponse.on('error', () => {
+          upstreamResponse.destroy()
+        })
+        upstreamResponse.on('error', () => {
+          clientResponse.destroy()
+        })
+        return
+      }
+
       clientResponse.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders)
       // The browser can go away mid-response. An unhandled 'error' on the
       // socket would take the proxy down with it.
@@ -444,12 +899,15 @@ server.on('upgrade', (clientRequest, clientSocket, clientHead) => {
   // The mux socket may arrive without the version-2 cookie, so the launch
   // token is injected here too when the request carries none.
   const headers = { ...clientRequest.headers }
-  if (!hasSessionCookie(headers)) {
+  const authority = clientRequest.headers.host
+  if (!hasSessionCookie(headers, authority)) {
     const token = currentLaunchToken()
     if (token) {
       const separator = clientRequest.url?.includes('?') ? '&' : '?'
       clientRequest.url = `${clientRequest.url ?? '/'}${separator}token=${encodeURIComponent(token)}`
     }
+    // A cookie minted for another authority would be refused upstream.
+    delete headers.cookie
   }
   const upstreamRequest = httpRequest({
     hostname: upstream.hostname,
