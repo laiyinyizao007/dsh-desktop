@@ -1,6 +1,10 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const sharp = require('sharp')
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const source = path.join(projectRoot, 'build', 'icon.png')
@@ -18,6 +22,35 @@ const lightDestination = path.join(destinationDirectory, 'dsh-desktop-logo-light
 const darkDestination = path.join(destinationDirectory, 'dsh-desktop-logo-dark.png')
 const indexPath = path.join(destinationDirectory, 'index.html')
 const manifestPath = path.join(destinationDirectory, 'manifest.webmanifest')
+
+/**
+ * The size the favicon is served at.
+ *
+ * The source artwork is 1254x1254, which is the size a packaged desktop
+ * icon wants — but the web favicon is drawn at 16-32 px, and the manifest's
+ * largest entry is what a browser reads for the home-screen icon. Serving
+ * the source artwork to both means a page that fetches the icon pulls a
+ * megabyte of pixels to display something a few dozen pixels wide.
+ *
+ * 256 px is the size the PWA manifest asks for and is larger than any
+ * display size the icon is actually used at.
+ */
+const FAVICON_SIZE = 256
+
+/**
+ * The number of colours the favicon is reduced to.
+ *
+ * The source artwork is true colour, and PNG compresses that poorly: the
+ * file is a megabyte of mostly-flat pixels that deflate cannot do much
+ * with, and neither gzip nor Brotli can do anything with it either — a PNG
+ * is already deflate inside a container that gzip would just wrap again.
+ *
+ * The artwork is a logo, so it has few enough distinct colours to be an
+ * indexed PNG. That is the only thing that makes the file small: the
+ * palette costs 256 bytes per pixel row of the palette, and the pixels
+ * become one byte each.
+ */
+const FAVICON_COLORS = 256
 
 /**
  * Swap the Harness favicon link for the desktop's own.
@@ -65,13 +98,30 @@ function replaceManifestIcon(contents, file) {
     throw new Error(`Could not update DSH Desktop branding in ${file}: no icon entry to replace`)
   }
   target.src = '/dsh-desktop-logo.png'
-  target.sizes = '1254x1254'
+  target.sizes = `${FAVICON_SIZE}x${FAVICON_SIZE}`
   target.type = 'image/png'
   return `${JSON.stringify(manifest, null, 2)}\n`
 }
 
+/**
+ * The favicon, reduced to the size it is served at.
+ *
+ * The packaged desktop icon keeps the full-resolution artwork; only the
+ * copy that the web frontend serves is reduced, because that is the one a
+ * browser downloads.
+ *
+ * @param file - the source artwork
+ * @returns the reduced artwork
+ */
+async function faviconBytes(file) {
+  return sharp(file)
+    .resize(FAVICON_SIZE, FAVICON_SIZE, { kernel: 'lanczos3' })
+    .png({ palette: true, colors: FAVICON_COLORS, compressionLevel: 9, effort: 10 })
+    .toBuffer()
+}
+
 await mkdir(destinationDirectory, { recursive: true })
-await copyFile(source, destination)
+await writeFile(destination, await faviconBytes(source))
 await copyFile(lightSource, lightDestination)
 await copyFile(darkSource, darkDestination)
 
