@@ -4172,7 +4172,7 @@ describe('workbench feature default', () => {
 })
 
 describe('local workbench installation restart notice', () => {
-  it('polls immediately and every five seconds, rehydrates after page refresh, and never restarts automatically', async () => {
+  it('polls immediately and every thirty seconds, rehydrates after page refresh, and never restarts automatically', async () => {
     vi.useFakeTimers()
     const { service, ctx, request } = await fixture()
     const restart = vi.fn()
@@ -4183,7 +4183,7 @@ describe('local workbench installation restart notice', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(service.getSnapshot().restartNeeded).toBe(false)
     pending = true
-    await vi.advanceTimersByTimeAsync(5000)
+    await vi.advanceTimersByTimeAsync(30000)
     expect(service.getSnapshot().restartNeeded).toBe(true)
     expect(restart).not.toHaveBeenCalled()
     const reloaded = new Workbenches(ctx, request)
@@ -4191,7 +4191,7 @@ describe('local workbench installation restart notice', () => {
     expect(reloaded.getSnapshot().restartNeeded).toBe(true)
     stop()
     const calls = request.mock.calls.length
-    await vi.advanceTimersByTimeAsync(15000)
+    await vi.advanceTimersByTimeAsync(30000)
     expect(request).toHaveBeenCalledTimes(calls)
     reloaded.dispose()
     service.dispose()
