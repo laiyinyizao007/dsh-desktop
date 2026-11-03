@@ -19,12 +19,12 @@
  * Usage:
  *   node scripts/dsh-web-proxy.mjs [--upstream http://127.0.0.1:43129] [--port 43128]
  */
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
-import { gzipSync } from 'node:zlib'
+import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
 
@@ -154,6 +154,125 @@ let sessionListCache = { expiresAt: 0, body: null, headers: null }
  * line simply does not match, and the previous token stays in use until the
  * new one is complete.
  */
+/**
+ * Whether the client accepts Brotli.
+ *
+ * The Harness compresses with gzip only — its webserver negotiates "gzip"
+ * and "identity" and has no Brotli. Brotli is 15-20% smaller than gzip on
+ * this kind of JavaScript, and the plugin graph is the largest thing a page
+ * loads, so the difference is worth the pass.
+ *
+ * The upstream is asked for gzip whatever the client asked for, so the
+ * proxy always has gzip to work from and can re-encode it to the encoding
+ * the client understands.
+ *
+ * @param headers - the request headers
+ * @returns whether the client listed `br` as acceptable
+ */
+function acceptsBrotli(headers) {
+  const header = headers['accept-encoding']
+  if (typeof header !== 'string') return false
+  return header
+    .split(',')
+    .map((part) => part.split(';')[0].trim().toLowerCase())
+    .includes('br')
+}
+
+/**
+ * Re-encode a gzip body as Brotli.
+ *
+ * The body has to be held in memory to be re-encoded, so this is only used
+ * for the client bundles, which are the large responses worth the pass.
+ *
+ * @param body - the gzip-compressed body from the upstream
+ * @returns the Brotli-compressed body
+ * @throws when the body is not gzip and cannot be decoded
+ */
+function toBrotli(body) {
+  return brotliCompressSync(gunzipSync(body), {
+    params: {
+      // Quality 5 is where the curve flattens: on this kind of JavaScript
+      // it is a few percent larger than quality 11 and an order of magnitude
+      // faster to produce — which matters, because the body is re-encoded on
+      // the way through. The window is left at its default; a larger one
+      // buys very little on a 6 MB body and costs time.
+      [constants.BROTLI_PARAM_QUALITY]: 5,
+      [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_GENERIC
+    }
+  })
+}
+
+/**
+ * Where re-encoded bundles are kept.
+ *
+ * A bundle's revision is derived from its bytes, so a re-encoded body stays
+ * correct for as long as that revision does — and the same revision is asked
+ * for again on every cold start. Keeping the body on disk turns the
+ * re-encoding from something that costs seconds into something that costs
+ * a read.
+ */
+const BUNDLE_CACHE_DIR = join(
+  process.env.DSH_HOME ?? join(process.env.HOME ?? '/home/averypi', '.dsh'),
+  'proxy-cache',
+  'bundles'
+)
+
+/** How many re-encoded bundles to keep before the oldest are dropped. */
+const BUNDLE_CACHE_ENTRIES = 24
+
+/** The revision a request asks for, if it asks for one. */
+function bundleRevision(url) {
+  return /[?&]rev=([A-Za-z0-9_-]+)/.exec(url)?.[1]
+}
+
+/**
+ * The re-encoded body of a bundle, if it has been kept.
+ *
+ * @param revision - the revision the request asks for
+ * @returns the Brotli body, or undefined when there is none
+ */
+function cachedBundle(revision) {
+  if (revision === undefined || revision === '') return undefined
+  try {
+    return readFileSync(join(BUNDLE_CACHE_DIR, `${revision}.br`))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Keep a re-encoded bundle for the next request that asks for it.
+ *
+ * @param revision - the revision the request asked for
+ * @param body - the Brotli body
+ */
+function storeBundle(revision, body) {
+  if (revision === undefined || revision === '') return
+  try {
+    mkdirSync(BUNDLE_CACHE_DIR, { recursive: true, mode: 0o700 })
+    writeFileSync(join(BUNDLE_CACHE_DIR, `${revision}.br`), body)
+  } catch {
+    // A cache that cannot be written is not a failure: the body is still
+    // served, it is just re-encoded next time.
+    return
+  }
+  try {
+    const kept = readdirSync(BUNDLE_CACHE_DIR)
+      .filter((name) => name.endsWith('.br'))
+      .map((name) => {
+        const path = join(BUNDLE_CACHE_DIR, name)
+        return { name, mtimeMs: statSync(path).mtimeMs }
+      })
+      .sort((left, right) => right.mtimeMs - left.mtimeMs)
+    for (const entry of kept.slice(BUNDLE_CACHE_ENTRIES)) {
+      unlinkSync(join(BUNDLE_CACHE_DIR, entry.name))
+    }
+  } catch {
+    // The cache is an optimisation; failing to tidy it is not worth a
+    // complaint.
+  }
+}
+
 /**
  * The launch token, cached against the log's identity.
  *
@@ -397,7 +516,12 @@ function fetchRootHtml(token) {
  * @returns the URL with the plugin list in the path
  */
 function cacheableBundleUrl(value) {
-  const pattern = new RegExp(`(plugins)/\\?\\?([^"']*?)&amp;rev=([^"'&]+)`, 'g')
+  // The revision is written two ways: as `&amp;rev=` in an HTML attribute,
+  // and as `&rev=` inside the module graph, which lives in a <script> and is
+  // therefore raw text with its entities intact. Both have to be rewritten —
+  // the client reads its bundle URLs from the module graph, so leaving that
+  // one alone would make it fetch every bundle a second time.
+  const pattern = /(plugins)\/\?\?([^"']*?)&(?:amp;)?rev=([^"'&]+)/g
   return value.replace(pattern, `$1/$2?rev=$3&proxy=${BUNDLE_URL_FORMAT}`)
 }
 
@@ -425,6 +549,23 @@ function harnessBundleUrl(rawUrl) {
   const revision = /^rev=([^&]*)/.exec(search)?.[1]
   if (revision === undefined) return rawUrl
   return `/plugins/??${path.slice('/plugins/'.length)}&rev=${revision}`
+}
+
+/**
+ * The cacheable form of a request that still uses the Harness's own URL.
+ * The URLs in the module graph are rewritten when the page is served, but a
+ * client that loaded an older page — or a URL that was copied out of the
+ * log — still asks for the Harness's own form. Sending it on to the
+ * Harness would work, but the answer would never be cached, so the request
+ * is pointed at the cacheable form instead.
+ *
+ * @param rawUrl - the request URL as it arrived
+ * @returns the URL to redirect to, or undefined when the request is not one
+ */
+function cacheableRequestUrl(rawUrl) {
+  const match = /^\/plugins\/\?\?(.+)&rev=([^&]+)/.exec(rawUrl)
+  if (match === null) return undefined
+  return `/plugins/${match[1]}?rev=${match[2]}&proxy=${BUNDLE_URL_FORMAT}`
 }
 
 /**
@@ -682,12 +823,58 @@ const server = createServer((clientRequest, clientResponse) => {
   }
 
   const target = rewriteUrl(requestUrl, carriesSession)
+
+  // Whether the client would rather have Brotli than the gzip the Harness
+  // produces. The bundle path re-encodes the body when this is true.
+  const wantsBrotli = acceptsBrotli(clientRequest.headers)
+
+  // A bundle that has already been re-encoded is served from disk. The
+  // re-encoding costs seconds, and the same revision is asked for again on
+  // every cold start — so the second time around it costs a read.
+  const revision = bundleRevision(target.path)
+  if (wantsBrotli && revision !== undefined) {
+    const cached = cachedBundle(revision)
+    if (cached !== undefined) {
+      clientResponse.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'content-encoding': 'br',
+        'content-length': String(cached.length),
+        'cache-control': 'public, max-age=31536000, immutable',
+        vary: 'Accept-Encoding'
+      })
+      clientResponse.end(cached)
+      return
+    }
+  }
+
+  // A request that still uses the Harness's own bundle URL is pointed at the
+  // cacheable form, so that the bundle it asks for can be kept by an edge
+  // cache instead of being pulled through the tunnel on every load.
+  const cacheable = cacheableRequestUrl(requestUrl)
+  if (cacheable !== undefined) {
+    clientResponse.writeHead(302, {
+      location: cacheable,
+      'cache-control': 'no-store'
+    })
+    clientResponse.end()
+    return
+  }
   const headers = { ...clientRequest.headers }
   // The Harness signs its session cookie against the request authority, so the
   // Host header has to stay the one the browser used. Rewriting it to the
   // upstream authority would make the Harness mint a cookie for a host the
   // browser never talks to, and every later request would come back 401.
   delete headers['content-length']
+
+  // The upstream is asked for gzip whatever the client asked for.
+  //
+  // The Harness negotiates "gzip" and "identity" and has no Brotli, so a
+  // client that lists only `br` would be answered with an uncompressed
+  // body. Asking for gzip instead means there is always a compressed body
+  // to re-encode — and a client that wanted gzip gets exactly that.
+  if (target.path.startsWith('/plugins/') && wantsBrotli) {
+    headers['accept-encoding'] = 'gzip'
+  }
   // Only the cookies minted for this authority may travel upstream. A cookie
   // for another authority — from a different entry point, or from before a
   // restart — would make the Harness refuse the request; dropping it lets
@@ -773,12 +960,59 @@ const server = createServer((clientRequest, clientResponse) => {
         responseHeaders['cache-control'] = 'no-cache'
       }
 
-      // A failure is not worth keeping. An edge cache holds a 404 as
-      // readily as a 200, and one that was caused by a transient fault —
-      // a Harness restart, a bundle that was mid-rebuild — would then be
-      // handed to every later visitor of that URL.
+      // A revisioned bundle is content-addressed, so it can be cached forever;
+      // the proxy used to override the Harness's own `immutable` with
+      // `no-store`, which made every reload re-download ~4 MB. A failure is
+      // never cached: a 404 caused by a transient fault would otherwise be
+      // handed to every later visitor.
       if ((upstreamResponse.statusCode ?? 502) >= 400) {
         responseHeaders['cache-control'] = 'no-store'
+      }
+
+      // Brotli for the client bundles.
+      //
+      // The Harness answers with gzip, and the browser may well have asked
+      // for gzip too — in which case the bytes on the wire are gzip's and
+      // the client decodes them as gzip. But a browser that lists `br` gets
+      // Brotli instead, which is 15-20% smaller on this kind of JavaScript.
+      //
+      // The body is held in memory to be re-encoded, so this is limited to
+      // the plugin bundles, which are the large responses worth the pass.
+      // A body that cannot be decoded is forwarded as it arrived.
+      if (
+        target.path.startsWith('/plugins/') &&
+        wantsBrotli &&
+        upstreamResponse.statusCode === 200 &&
+        (responseHeaders['content-encoding'] ?? '').toLowerCase() === 'gzip'
+      ) {
+        const chunks = []
+        upstreamResponse.on('data', (chunk) => chunks.push(chunk))
+        upstreamResponse.on('end', () => {
+          const raw = Buffer.concat(chunks)
+          const brotli = { ...responseHeaders }
+          delete brotli['content-length']
+          delete brotli['transfer-encoding']
+          try {
+            const body = toBrotli(raw)
+            storeBundle(bundleRevision(target.path), body)
+            brotli['content-encoding'] = 'br'
+            brotli['content-length'] = String(body.length)
+            brotli['vary'] = 'Accept-Encoding'
+            clientResponse.writeHead(upstreamResponse.statusCode ?? 502, brotli)
+            clientResponse.end(body)
+          } catch {
+            // A body that is not gzip after all is forwarded unchanged.
+            clientResponse.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders)
+            clientResponse.end(raw)
+          }
+        })
+        clientResponse.on('error', () => {
+          upstreamResponse.destroy()
+        })
+        upstreamResponse.on('error', () => {
+          clientResponse.destroy()
+        })
+        return
       }
 
       // The root page is rewritten so that the plugin graph it advertises
