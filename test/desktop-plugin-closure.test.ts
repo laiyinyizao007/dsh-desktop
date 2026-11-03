@@ -57,7 +57,11 @@ describe('desktop plugin closure', () => {
 
     for (const row of profilePatch.flatMap((entry) => entry.insert ?? [])) {
       if (typeof row.name !== 'string') continue
-      expect(manifest.dependencies[row.name]).toMatch(/^file:packages\//u)
+      // The package must be a local path, so that the build bundles the
+      // source in this checkout rather than a registry's copy of it. It
+      // need not live under packages/: the phone layout is published on
+      // its own, and is taken as a dependency from a sibling checkout.
+      expect(manifest.dependencies[row.name]).toMatch(/^file:/u)
     }
   })
 })
