@@ -132,3 +132,12 @@ Before submitting a change, run `npm test`, `npm run typecheck`, and `npm run bu
 DSH Desktop is open source under the [MIT License](LICENSE).
 
 DeepSeek Harness and its dependencies remain subject to their respective upstream licenses and trademark policies. DSH Desktop is an independent community desktop application.
+
+
+## Plugins
+
+- **`dsh-desktop-responsive`** — the phone-width layout. It lives in its own
+  repository and is taken here as a dependency, from a sibling checkout
+  (`../dsh-desktop-responsive`); the entry under `packages/` is a link to
+  it. The plugin adapts a layout it does not own, so it is published on
+  its own rather than carried here.
