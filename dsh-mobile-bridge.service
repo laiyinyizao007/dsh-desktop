@@ -1,9 +1,14 @@
 [Unit]
 Description=DSH Desktop LAN mobile bridge (PIN-paired phone access)
 Documentation=https://github.com/dataelement/dsh-desktop
+# Deliberately not `Requires=dsh-web.service`: the bridge re-reads the
+# Harness's launch token from the log on every exchange, so it survives a
+# Harness restart on its own. Tying it with `Requires` would stop and restart
+# the bridge whenever the Harness stops — and because a `systemctl stop` is an
+# explicit stop, `Restart=always` would not bring it back: a single stop of
+# the Harness would take the phone bridge down for good.
 After=network-online.target dsh-web.service
-Wants=network-online.target
-Requires=dsh-web.service
+Wants=network-online.target dsh-web.service
 
 [Service]
 Type=simple
