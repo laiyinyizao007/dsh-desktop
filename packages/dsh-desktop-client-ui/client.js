@@ -6,13 +6,17 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const React = require('react')
-    const { BrandWordmark, FishLogo, MenuItemButton, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
+    const { FishLogo, MenuItemButton, Tooltip } = require('@deepseek-ai/dsh-client-ui-primitives')
 
-    // Tight bounds of the mark inside its 1000x1000 source artwork.
-    const BRAND_MARK_VIEWBOX = { x: 42, y: 218, width: 898, height: 564 }
-    // DSH Desktop whale mark: a window with a tail, drawn in currentColor so
-    // it follows the sidebar text color in both themes.
-    const BRAND_MARK_PATH = "M478.318 218C605.318 218 683.318 287 687.318 404L691.318 472C693.318 525 697.319 556 726.318 574C746.318 587 774.318 585 790.318 562C799.318 550 802.318 539 792.318 534C747.319 513 727.318 472 738.318 428C739.652 420 742.652 418.667 747.318 424C774.318 450 815.318 460 831.318 501C855.318 457 898.318 456 930.318 436C936.318 431.333 939.318 433.333 939.318 442C938.318 496 903.318 535 850.318 547C841.318 570 833.318 592 819.318 622C773.318 723 661.318 782 491.318 782H294.318C161.319 782 74.3183 714 53.3184 592C41.3184 526 38.3184 433 50.3184 375C70.3184 277 113.82 218 234.32 218H478.318ZM571.82 350.5C469.82 333.5 277.82 329.5 164.82 350.5C138.82 355.5 114.318 379 110.318 404C100.318 451 102.318 551 124.318 596C155.318 660 214.319 697 315.318 705C324.318 678 346.319 662 376.318 662C404.318 662 427.318 678 435.318 705C493.318 699 526.318 680 562.318 652C621.318 606 633.749 527.103 633.749 424C633.749 385.144 604.82 355.5 571.82 350.5ZM179.32 264C167.722 264 158.32 273.402 158.32 285C158.32 296.598 167.722 306 179.32 306C190.918 306 200.32 296.598 200.32 285C200.32 273.402 190.918 264 179.32 264ZM245.551 264C233.953 264 224.551 273.402 224.551 285C224.551 296.598 233.953 306 245.551 306C257.149 306 266.551 296.598 266.551 285C266.551 273.402 257.149 264 245.551 264ZM311.782 264C300.184 264 290.782 273.402 290.782 285C290.782 296.598 300.184 306 311.782 306C323.38 306 332.782 296.598 332.782 285C332.782 273.402 323.38 264 311.782 264Z"
+    // Tight bounds of the mark inside its source artwork.
+    const BRAND_MARK_VIEWBOX = { x: 238, y: 220, width: 504, height: 493 }
+    // AveryHub robot mark: a bot head with an antenna, drawn in currentColor so
+    // it follows the sidebar text color in both themes. The path is traced from
+    // the 980x980 source artwork, so the viewBox above keeps its original
+    // pixel coordinates. The outer contour, the face hole and the two eye
+    // islands use alternating winding, so the default non-zero fill rule
+    // paints them.
+    const BRAND_MARK_PATH = "M495.5 221.0 L485.5 221.0 L476.5 225.0 L472.0 229.5 L468.0 237.5 L469.0 251.5 L473.0 258.5 L480.0 263.5 L473.5 297.0 L443.5 300.0 L429.5 303.0 L424.5 306.0 L417.0 315.5 L415.0 336.5 L413.5 338.0 L400.5 342.0 L377.5 353.0 L354.5 368.0 L336.5 383.0 L318.0 402.5 L293.5 438.0 L271.5 443.0 L261.0 451.5 L249.0 483.5 L243.0 509.5 L240.0 530.5 L239.0 543.5 L243.0 555.5 L249.5 562.0 L264.0 570.5 L269.0 595.5 L281.0 623.5 L292.0 639.5 L309.5 658.0 L332.5 675.0 L364.5 691.0 L407.5 704.0 L454.5 711.0 L510.5 712.0 L562.5 706.0 L607.5 694.0 L647.5 675.0 L670.5 658.0 L689.0 638.5 L699.0 623.5 L708.0 604.5 L714.0 583.5 L716.0 570.5 L730.5 562.0 L737.0 555.5 L741.0 544.5 L739.0 521.5 L735.0 499.5 L729.0 476.5 L719.0 451.5 L708.5 443.0 L686.5 438.0 L672.0 415.5 L654.0 393.5 L621.5 365.0 L586.5 345.0 L566.5 338.0 L565.0 336.5 L564.0 319.5 L562.0 313.5 L555.5 306.0 L541.5 301.0 L520.5 298.0 L509.5 298.0 L506.0 296.5 L500.0 263.5 L509.0 255.5 L511.0 251.5 L512.0 237.5 L508.0 229.5 L503.5 225.0 ZM652.0 591.5 L634.5 611.0 L615.5 624.0 L593.5 634.0 L553.5 645.0 L523.5 649.0 L469.5 650.0 L446.5 648.0 L408.5 641.0 L386.5 634.0 L366.5 625.0 L345.5 611.0 L330.0 594.5 L323.0 581.5 L318.0 559.5 L319.0 535.5 L322.0 518.5 L329.0 494.5 L342.0 467.5 L360.0 442.5 L385.5 419.0 L410.5 404.0 L440.5 393.0 L469.5 388.0 L511.5 388.0 L549.5 396.0 L575.5 407.0 L604.5 427.0 L625.0 448.5 L641.0 472.5 L655.0 506.5 L660.0 528.5 L662.0 548.5 L660.0 572.5 ZM407.5 567.0 L419.5 562.0 L430.0 550.5 L436.0 535.5 L437.0 515.5 L433.0 499.5 L428.0 490.5 L418.5 481.0 L411.5 478.0 L402.5 477.0 L391.5 481.0 L385.0 486.5 L380.0 493.5 L376.0 501.5 L373.0 513.5 L373.0 530.5 L376.0 542.5 L386.0 558.5 L395.5 565.0 ZM572.5 567.0 L584.5 565.0 L595.0 557.5 L603.0 544.5 L607.0 530.5 L606.0 508.5 L600.0 493.5 L594.0 485.5 L588.5 481.0 L577.5 477.0 L572.5 477.0 L563.5 480.0 L552.0 490.5 L547.0 499.5 L543.0 515.5 L544.0 535.5 L550.0 550.5 L560.5 562.0 Z"
 
     function DesktopBrandMark() {
       const height = 17
@@ -29,8 +33,22 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // The product name is real text rather than the upstream SVG wordmark, so
+    // it stays readable, selectable and localisable.
     function DesktopBrandName() {
-      return React.createElement(BrandWordmark, { includeMark: false })
+      return React.createElement(
+        'span',
+        {
+          style: {
+            fontSize: 15,
+            fontWeight: 600,
+            lineHeight: '24px',
+            letterSpacing: '0.01em',
+            whiteSpace: 'nowrap'
+          }
+        },
+        'averyhub'
+      )
     }
 
     function ConversationBrandMark(props) {

@@ -51,7 +51,6 @@ describe('DSH Desktop client slot occupants', () => {
       type,
       props: { ...props, children }
     })
-    const BrandWordmark = vi.fn()
     const FishLogo = vi.fn()
     const plugin = definition!.factory((id) => {
       if (id === 'react') {
@@ -62,7 +61,7 @@ describe('DSH Desktop client slot occupants', () => {
         }
       }
       if (id === '@deepseek-ai/dsh-client-ui-primitives') {
-        return { BrandWordmark, FishLogo }
+        return { FishLogo }
       }
       throw new Error(`Unexpected client dependency: ${id}`)
     })
@@ -116,8 +115,10 @@ describe('DSH Desktop client slot occupants', () => {
     const sidebarName = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.name'
     )!.component({}) as { type: unknown; props: Record<string, unknown> }
-    expect(sidebarName.type).toBe(BrandWordmark)
-    expect(sidebarName.props.includeMark).toBe(false)
+    // The product name is real text rather than the upstream SVG wordmark, so
+    // it stays readable, selectable and localisable.
+    expect(sidebarName.type).toBe('span')
+    expect(sidebarName.props.children).toEqual(['averyhub'])
 
     const sidebarMark = registrations.find(
       ({ config }) => config.name === 'sidebar.brand.mark'
