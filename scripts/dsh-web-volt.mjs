@@ -174,27 +174,20 @@ export async function readVoltState(deps = {}) {
 /**
  * The badge itself.
  *
- * It is deliberately small and sits at the top centre, out of the way of the
- * page and of every control: the corners hold the sidebar and the right
- * rail's buttons, so the middle is the one place nothing else lives. The
- * point is to be legible without taking up the room at the bottom, where a
- * phone puts its thumb and the keyboard. The colour of the dot carries the
+ * It is a single coloured dot in the top corner: the colour carries the
  * state — green for a healthy rail, amber for events that already happened,
- * red for a rail that is sagging right now — and the temperature is the one
- * reading worth seeing at a glance. The rest of the story goes into the
- * tooltip, where it is there for whoever asks.
+ * red for a rail that is sagging right now, grey when the machine does not
+ * answer. Nothing else is drawn, so the dot takes no room and covers
+ * nothing; it also takes no pointer, so it cannot sit on a tap. The story
+ * behind the colour — the temperature, the load, the last under-voltage
+ * event — lives in the tooltip, where it is there for whoever asks.
  */
 export function buildVoltBadge() {
-  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top));transform:translateX(-50%);z-index:2147483000;display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:rgba(24,24,30,.72);color:#cdd6f4;font:11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 1px 6px rgba(0,0,0,.35);user-select:none;pointer-events:none;backdrop-filter:blur(4px)">
-  <span data-dsh-volt-dot style="width:7px;height:7px;border-radius:50%;background:#a6adc8;flex:none"></span>
-  <span data-dsh-volt-text>--°C</span>
-</div>
+  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:2147483000;width:10px;height:10px;border-radius:50%;background:#a6adc8;box-shadow:0 0 0 1px rgba(255,255,255,.35);user-select:none;pointer-events:none"></div>
 <script>
 (function () {
-  var badge = document.querySelector('[${BADGE_MARKER}]')
-  if (badge === null) return
-  var dot = badge.querySelector('[data-dsh-volt-dot]')
-  var text = badge.querySelector('[data-dsh-volt-text]')
+  var dot = document.querySelector('[${BADGE_MARKER}]')
+  if (dot === null) return
   var COLORS = { ok: '#a6e3a1', warn: '#f9e2af', bad: '#f38ba8', unknown: '#a6adc8' }
 
   function describe(state) {
@@ -211,12 +204,6 @@ export function buildVoltBadge() {
       .then(function (state) {
         var described = describe(state)
         dot.style.background = COLORS[described[1]]
-        // The face is just the temperature next to the dot; the colour
-        // tells the rest. The tooltip keeps the full story.
-        var temp = state !== null && state !== undefined && typeof state.temperature === 'number'
-          ? Math.round(state.temperature) + '°C'
-          : '--°C'
-        text.textContent = temp
         var details = [described[0]]
         if (state !== null && state !== undefined && typeof state.temperature === 'number') {
           details.push('温度 ' + state.temperature.toFixed(1) + '°C')
@@ -227,11 +214,11 @@ export function buildVoltBadge() {
         if (state !== null && state !== undefined && typeof state.lastEvent === 'string') {
           details.push('最近一次欠压 ' + state.lastEvent)
         }
-        badge.title = details.join(' · ')
+        dot.title = details.join(' · ')
       })
       .catch(function () {
         // The badge is a hint, not a feature of the page: a failed poll
-        // leaves the last reading on screen instead of replacing it.
+        // leaves the last colour on screen instead of replacing it.
       })
   }
 

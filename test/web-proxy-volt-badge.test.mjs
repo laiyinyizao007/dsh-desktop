@@ -213,14 +213,14 @@ describe('buildVoltBadge', () => {
     expect(badge).toContain('setInterval')
   })
 
-  it('sits at the top centre, not at the bottom or the corners', () => {
+  it('is a single dot at the top-right, not a pill at the bottom', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toMatch(/top:calc\(12px \+ env\(safe-area-inset-top\)\)/)
-    expect(badge).toMatch(/left:50%;/)
-    expect(badge).toMatch(/translateX\(-50%\)/)
+    expect(badge).toMatch(/top:calc\(8px \+ env\(safe-area-inset-top\)\)/)
+    expect(badge).toMatch(/right:8px/)
+    expect(badge).toMatch(/width:10px/)
     expect(badge).not.toMatch(/bottom:/)
-    expect(badge).not.toMatch(/right:\d/)
+    expect(badge).not.toMatch(/left:50%/)
   })
 
   it('does not take the pointer and cannot be dismissed', () => {
@@ -230,19 +230,21 @@ describe('buildVoltBadge', () => {
     expect(badge).not.toContain("addEventListener('click'")
   })
 
-  it('shows only the dot and the temperature', () => {
+  it('draws only a coloured dot, with no text', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toContain('data-dsh-volt-dot')
-    expect(badge).toContain('data-dsh-volt-text')
-    // The face is the temperature, not a sentence.
-    expect(badge).toContain('>--°C<')
+    expect(badge).toContain('data-dsh-volt-badge')
+    expect(badge).not.toContain('data-dsh-volt-text')
+    expect(badge).not.toContain('data-dsh-volt-dot')
+    // The dot itself carries the colour and the tooltip carries the story.
+    expect(badge).toContain('dot.title')
   })
 
   it('keeps the full story in the tooltip', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toContain('badge.title')
+    expect(badge).toContain('dot.title')
     expect(badge).toContain('最近一次欠压')
+    expect(badge).toContain('温度 ')
   })
 })
