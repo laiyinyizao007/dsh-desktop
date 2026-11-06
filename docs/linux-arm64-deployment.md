@@ -305,6 +305,45 @@ The WebSocket upgrade must be forwarded too. The Harness multiplexes every
 server-push stream over one socket at `/api/remote.mux`; without it the
 workspace list stays empty while the rest of the page looks fine.
 
+### The mux dies every few seconds, and the page reloads with it
+
+That socket is not just a channel. When it drops, the client treats the
+connection as new and re-reads everything: the model catalog, the agent
+presets, the whole Session list. The sidebar clears its titles before the
+list comes back, so it shows a loading state for as long as the re-read
+takes — about two seconds over the public URL — and the model picker spins
+for the same reason.
+
+The Harness's mux server watches that socket: it pings it every two seconds
+and terminates one that misses two pongs, so a client has roughly four to
+six seconds to answer. The ping is queued behind whatever the server is
+pushing, and the server pushes megabytes of events to a browser that is
+reaching it over a tunnel; the client does not see the ping until the data
+has arrived, and its pong has to make one more round trip. The server
+therefore terminates the socket it was in the middle of filling, every six
+to eight seconds, and the page starts over.
+
+The profile's patch layer raises the interval, which is all it takes:
+
+```yaml
+- id: typert-gateway
+  name: '@deepseek-ai/dsh-api-gateway'
+  config:
+    websocketHeartbeatIntervalMs: 15000
+```
+
+Fifteen seconds between pings gives the pong time to come back. This setting
+is read at boot, so it needs a Harness restart to take effect.
+
+**How to tell the three things apart.** The nginx timing log says how long
+each mux connection lasted, and the access log's path counts say how often
+the page re-read itself — a `session/list` and a `session/modelCatalog` per
+mux connection means the page is restarting. To find out *which side* closed
+the socket, the proxy's `upgrade` handler is the place to look: it sees both
+sockets, so it can report which one closed first and how many bytes each
+way. A close the browser asked for carries a WebSocket close code in the
+last frame it sent; a connection that was cut has no close frame at all.
+
 The browser-trust fence also needs the public hostname:
 
 ```
@@ -585,6 +624,12 @@ does not own it. The rows a Linux web profile typically carries:
     provider: minimax-cn
     model: MiniMax-M3
     reasoningEffort: high
+
+# The mux WebSocket's heartbeat (see section 5)
+- id: typert-gateway
+  name: '@deepseek-ai/dsh-api-gateway'
+  config:
+    websocketHeartbeatIntervalMs: 15000
 
 # The Desktop host plugins (see section 3)
 - id: ui-brand-official
