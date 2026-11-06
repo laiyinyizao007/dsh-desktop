@@ -213,15 +213,21 @@ describe('buildVoltBadge', () => {
     expect(badge).toContain('setInterval')
   })
 
-  it('is a single dot at the top centre, not a pill at the bottom', () => {
+  it('is a pill that sits beside the model picker', () => {
+    const badge = buildVoltBadge()
+
+    // It anchors on the model picker's slot, not on a rehashed class name.
+    expect(badge).toContain('data-slot="conversation.input.model"')
+    expect(badge).toContain('data-dsh-volt-text')
+  })
+
+  it('falls back to the top centre when there is no model picker', () => {
     const badge = buildVoltBadge()
 
     expect(badge).toMatch(/top:calc\(8px \+ env\(safe-area-inset-top\)\)/)
     expect(badge).toMatch(/left:50%/)
     expect(badge).toMatch(/translateX\(-50%\)/)
-    expect(badge).toMatch(/width:10px/)
     expect(badge).not.toMatch(/bottom:/)
-    expect(badge).not.toMatch(/right:\d/)
   })
 
   it('does not take the pointer and cannot be dismissed', () => {
@@ -231,20 +237,18 @@ describe('buildVoltBadge', () => {
     expect(badge).not.toContain("addEventListener('click'")
   })
 
-  it('draws only a coloured dot, with no text', () => {
+  it('draws a coloured dot and the temperature', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toContain('data-dsh-volt-badge')
-    expect(badge).not.toContain('data-dsh-volt-text')
-    expect(badge).not.toContain('data-dsh-volt-dot')
-    // The dot itself carries the colour and the tooltip carries the story.
-    expect(badge).toContain('dot.title')
+    expect(badge).toContain('data-dsh-volt-dot')
+    expect(badge).toContain('data-dsh-volt-text')
+    expect(badge).toContain('>--°C<')
   })
 
   it('keeps the full story in the tooltip', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toContain('dot.title')
+    expect(badge).toContain('badge.title')
     expect(badge).toContain('最近一次欠压')
     expect(badge).toContain('温度 ')
   })
