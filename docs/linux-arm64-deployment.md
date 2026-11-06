@@ -388,6 +388,31 @@ rather than five: what the badge watches is whether the machine is
 undervoltage right now, and nobody can act on that faster than they can
 read it.
 
+
+### The boot notice
+
+The page is a client that downloads about three megabytes of JavaScript
+before the app mounts. Over a slow link — a phone on a mobile network, or
+a first visit through a tunnel whose edge does not hold the bundles yet —
+that takes tens of seconds. Until it is over the page says nothing: a
+white screen with a spinner, and no way to tell whether it is working or
+stuck.
+
+So the proxy injects a notice next to the badge: it counts the seconds and
+carries a retry button. A page that is not going to come up can then be
+asked to try again instead of being stared at. It stays hidden for the
+first eight seconds — past the warm case, well before the cold case has
+given up — and it goes away on its own once the client has mounted.
+
+It is a **sibling** of the app, not a part of it: the app replaces the
+whole body when it mounts, so anything inside the app's own tree would be
+thrown away with it. Whether the client is up is told by two things: the
+upstream boot screen marks itself with `data-dsh-boot`, and the root holds
+something once the app is there.
+
+The notice lives in `scripts/dsh-web-boot-notice.mjs`, and
+`test/web-proxy-boot-notice.test.mjs` covers it.
+
 ---
 
 ## 6. Phone access

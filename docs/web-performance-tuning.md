@@ -231,13 +231,27 @@ logrotate 保留（改成每周、保留 4 份）——它只清掉日志里那�
 
 ### 可观测性
 
-- nginx 新增 `log_format dsh_timing`（`$request_time` / `$upstream_response_time` /
-  `$upstream_connect_time` / `$upstream_status` / `$bytes_sent` / `$http_cf_ray` /
-  `$request_uri`），DSH 站点写 `/var/log/nginx/dsh_timing.log`；`/assets/` 仍然
-  `access_log off`。**`$remote_addr` 在这里永远是 127.0.0.1**（隧道从本机连进来），
+- nginx 新增 `log_format dsh_timing`：
+
+  ```
+  '$time_iso8601 $remote_addr $http_user_agent '
+  '$request_time $upstream_response_time $upstream_connect_time '
+  '$upstream_status $bytes_sent $http_cf_ray $request_uri'
+  ```
+
+  DSH 站点写 `/var/log/nginx/dsh_timing.log`；`/assets/` 仍然 `access_log off`。
+  **时间戳在最前面** —— 这一行是排查「页面自己重载」那类问题的关键：它能把
+  一条 mux 连接的存活时长和它旁边那些重取请求的先后顺序对起来。
+  **UA 也留着**：区分浏览器的请求和探针、预热脚本的请求。
+  **`$remote_addr` 在这里永远是 127.0.0.1**（隧道从本机连进来），
   跟边缘对账要靠 `$http_cf_ray`。
 - `scripts/dsh-cold-load-probe.sh` —— 模拟一次冷启动，逐条打印 `cf-cache-status`、
   字节数和 TTFB，最后汇总总时长与总字节，作为回归基线。
+- **「页面自己重载」怎么查**：计时日志里 `/api/remote.mux` 那几行是每条 WebSocket
+  连接的存活时长；它们旁边紧跟着一批 `POST /api/session/list`、
+  `POST /api/session/modelCatalog`、`POST /api/agentPresets/list` 就是页面在重读
+  自己。**每条 mux 连接对应一次重取 = 页面在抖**。根因与修法见
+  [部署文档](linux-arm64-deployment.md#the-mux-dies-every-few-seconds-and-the-page-reloads-with-it)。
   > bundle 的并发请求各自**只读**一份 cookie jar 的副本。共用一个 jar 会让 11 个
   > 并发 curl 同时改写同一个文件，回源型请求（要校验 cookie 的）就会偶发 401 ——
   > 走边缘缓存时看不出来，因为边缘直接返回，根本不到源站。
