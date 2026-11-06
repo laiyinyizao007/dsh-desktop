@@ -174,30 +174,28 @@ export async function readVoltState(deps = {}) {
 /**
  * The badge itself.
  *
- * It is a small pill — a coloured dot and the temperature — that sits to
- * the left of the model picker, inside the composer's own bar. The colour
- * carries the state: green for a healthy rail, amber for events that
- * already happened, red for a rail that is sagging right now, grey when
- * the machine does not answer. The rest of the story — the load, the last
+ * It is a small pill — a coloured dot and the temperature — that lives
+ * inside the composer's own toolbar, to the left of the model picker. The
+ * colour carries the state: green for a healthy rail, amber for events that
+ * already happened, red for a rail that is sagging right now, grey when the
+ * machine does not answer. The rest of the story — the load, the last
  * under-voltage event — lives in the tooltip.
+ *
+ * The pill is inserted into the composer's DOM rather than floated over the
+ * page, so it moves with the composer — when the keyboard opens, when a
+ * message arrives, when the seat grows — without having to track any of
+ * that itself. Its colours come from the page's own theme variables, so it
+ * follows the light or dark theme rather than carrying its own.
  *
  * The model picker is found by the slot it renders into —
  * `conversation.input.model` — rather than by a class name, which is
- * rehashed on every build. When there is no model picker (a sessionless
- * composer, a surface that does not offer one), the pill falls back to the
- * top centre, where nothing else lives.
+ * rehashed on every build. When there is no model picker the pill is not
+ * shown: there is nowhere it belongs that is not already someone else's
+ * spot.
  */
 export function buildVoltBadge() {
-  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));transform:translateX(-50%);z-index:2147483000;display:none;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;background:rgba(24,24,30,.72);color:#cdd6f4;font:11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 1px 6px rgba(0,0,0,.35);user-select:none;pointer-events:none;backdrop-filter:blur(4px)">
-  <span data-dsh-volt-dot style="width:7px;height:7px;border-radius:50%;background:#a6adc8;flex:none"></span>
-  <span data-dsh-volt-text>--°C</span>
-</div>
-<script>
+  return `<script ${BADGE_MARKER}-script>
 (function () {
-  var badge = document.querySelector('[${BADGE_MARKER}]')
-  if (badge === null) return
-  var dot = badge.querySelector('[data-dsh-volt-dot]')
-  var text = badge.querySelector('[data-dsh-volt-text]')
   var COLORS = { ok: '#a6e3a1', warn: '#f9e2af', bad: '#f38ba8', unknown: '#a6adc8' }
 
   function describe(state) {
@@ -208,38 +206,66 @@ export function buildVoltBadge() {
     return ['电源 未知', 'unknown']
   }
 
-  // Where the pill sits. It hangs off the left edge of the model picker,
-  // vertically centred on it; without a model picker it centres in the top
-  // edge, the one spot nothing else occupies.
-  function place() {
+  var pill = null
+  var dot = null
+  var text = null
+
+  function buildPill() {
+    pill = document.createElement('div')
+    pill.setAttribute('${BADGE_MARKER}', '')
+    pill.title = '电源状态读取中'
+    pill.style.cssText = 'display:none;align-items:center;gap:4px;flex:none;margin-right:4px;padding:2px 7px;border-radius:999px;background:var(--dsw-alias-interactive-bg-subtle,var(--dsw-alias-bg-layer-2));color:var(--dsw-alias-label-secondary);font:11px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;user-select:none;pointer-events:none'
+    dot = document.createElement('span')
+    dot.setAttribute('data-dsh-volt-dot', '')
+    dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:#a6adc8;flex:none'
+    text = document.createElement('span')
+    text.setAttribute('data-dsh-volt-text', '')
+    text.textContent = '--°C'
+    pill.appendChild(dot)
+    pill.appendChild(text)
+  }
+
+  // Find the element in the composer toolbar that carries the model picker.
+  // The slot itself is display:contents and reports no box, so the first
+  // descendant with a real size is used.
+  function modelAnchor() {
     var slot = document.querySelector('[data-slot="conversation.input.model"]')
-    // The slot is display:contents, so it reports no box of its own;
-    // the picker inside it is what has size.
-    var model = null
-    if (slot !== null) {
-      model = slot.firstElementChild
-      while (model !== null && model.getBoundingClientRect().width === 0) {
-        model = model.firstElementChild
-      }
+    if (slot === null) return null
+    var el = slot.firstElementChild
+    while (el !== null && el.getBoundingClientRect().width === 0) el = el.firstElementChild
+    if (el === null || el.getBoundingClientRect().width === 0) return null
+    return el
+  }
+
+  // Insert the pill just before the model picker container, inside the
+  // same toolbar row. It becomes a flex sibling of the picker and follows
+  // the toolbar wherever it goes.
+  var attaching = false
+
+  function attach() {
+    if (pill === null) buildPill()
+    if (pill.isConnected) return true
+    var anchor = modelAnchor()
+    if (anchor === null) return false
+    var parent = anchor.parentElement
+    if (parent === null) return false
+    parent.insertBefore(pill, anchor)
+    pill.style.display = 'flex'
+    // The first refresh may have run before the picker existed; fetch again
+    // now that there is somewhere to put the reading.
+    if (!attaching) {
+      attaching = true
+      refresh()
+      attaching = false
     }
-    if (model === null || model.getBoundingClientRect().width === 0) {
-      badge.style.left = '50%'
-      badge.style.top = 'calc(8px + env(safe-area-inset-top))'
-      badge.style.transform = 'translateX(-50%)'
-      badge.style.marginTop = '0'
-      return
-    }
-    var rect = model.getBoundingClientRect()
-    badge.style.transform = 'none'
-    badge.style.marginTop = '0'
-    badge.style.left = (rect.left - badge.offsetWidth - 6) + 'px'
-    badge.style.top = (rect.top + rect.height / 2 - badge.offsetHeight / 2) + 'px'
+    return true
   }
 
   function refresh() {
     fetch('${VOLT_ENDPOINT}')
       .then(function (response) { return response.ok ? response.json() : null })
       .then(function (state) {
+        if (!attach()) return
         var described = describe(state)
         dot.style.background = COLORS[described[1]]
         var temp = state !== null && state !== undefined && typeof state.temperature === 'number'
@@ -256,37 +282,21 @@ export function buildVoltBadge() {
         if (state !== null && state !== undefined && typeof state.lastEvent === 'string') {
           details.push('最近一次欠压 ' + state.lastEvent)
         }
-        badge.title = details.join(' · ')
-        badge.style.display = 'flex'
-        place()
+        pill.title = details.join(' · ')
+        pill.style.display = 'flex'
       })
       .catch(function () {
-        // The badge is a hint, not a feature of the page: a failed poll
-        // leaves the last colour on screen instead of replacing it.
+        // A failed poll leaves the last reading on screen.
       })
   }
 
+  // The composer is rebuilt on session switches, and the pill goes with
+  // the old DOM. A watcher re-attaches it when the picker reappears.
+  var observer = new MutationObserver(function () { attach() })
+  observer.observe(document.body, { childList: true, subtree: true })
+
   refresh()
-  // Thirty seconds rather than five.
-  //
-  // What this watches is whether the machine is undervoltage right now, and
-  // a person cannot act on that any faster than they can read it. Polling
-  // it every five seconds meant a request every five seconds for the life
-  // of the page, and this path was the most requested of all.
   setInterval(refresh, 30000)
-  // The composer mounts a beat after the page — its picker may not exist
-  // when the first reading lands — and it moves whenever a message arrives
-  // or the keyboard opens. The pill re-places itself with the layout, and
-  // keeps trying for a short while until the picker is there.
-  function keepPlacing() {
-    place()
-    var slot = document.querySelector('[data-slot="conversation.input.model"]')
-    if (slot !== null) return
-    setTimeout(keepPlacing, 500)
-  }
-  keepPlacing()
-  window.addEventListener('resize', place)
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', place)
 })()
 </script>`
 }

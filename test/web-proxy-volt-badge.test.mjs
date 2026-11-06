@@ -178,12 +178,12 @@ describe('readVoltState', () => {
 })
 
 describe('injectVoltBadge', () => {
-  it('puts the badge into the page', () => {
+  it('puts the badge script into the page', () => {
     const html = injectVoltBadge('<html><body><div id="app"></div></body></html>')
 
-    expect(html).toContain('data-dsh-volt-badge')
+    expect(html).toContain('data-dsh-volt-badge-script')
     expect(html).toContain(VOLT_ENDPOINT)
-    expect(html.indexOf('data-dsh-volt-badge')).toBeLessThan(html.indexOf('</body>'))
+    expect(html.indexOf('data-dsh-volt-badge-script')).toBeLessThan(html.indexOf('</body>'))
   })
 
   it('does not add a second badge to a page that already carries one', () => {
@@ -191,13 +191,13 @@ describe('injectVoltBadge', () => {
     const twice = injectVoltBadge(once)
 
     expect(twice).toBe(once)
-    expect(twice.split('<div data-dsh-volt-badge').length - 1).toBe(1)
+    expect(twice.split('data-dsh-volt-badge-script').length - 1).toBe(1)
   })
 
   it('still adds the badge to a page that has no body element', () => {
     const html = injectVoltBadge('<div id="app"></div>')
 
-    expect(html).toContain('data-dsh-volt-badge')
+    expect(html).toContain('data-dsh-volt-badge-script')
   })
 
   it('leaves a page it cannot read alone', () => {
@@ -213,21 +213,27 @@ describe('buildVoltBadge', () => {
     expect(badge).toContain('setInterval')
   })
 
-  it('is a pill that sits beside the model picker', () => {
+  it('injects into the composer DOM beside the model picker', () => {
     const badge = buildVoltBadge()
 
     // It anchors on the model picker's slot, not on a rehashed class name.
     expect(badge).toContain('data-slot="conversation.input.model"')
-    expect(badge).toContain('data-dsh-volt-text')
+    // It creates a pill element in JS rather than shipping one in the HTML.
+    expect(badge).toContain('createElement')
+    expect(badge).toContain('insertBefore')
   })
 
-  it('falls back to the top centre when there is no model picker', () => {
+  it('uses theme variables rather than a hardcoded colour', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toMatch(/top:calc\(8px \+ env\(safe-area-inset-top\)\)/)
-    expect(badge).toMatch(/left:50%/)
-    expect(badge).toMatch(/translateX\(-50%\)/)
-    expect(badge).not.toMatch(/bottom:/)
+    expect(badge).toContain('var(--dsw-alias')
+    expect(badge).not.toMatch(/background:rgba\(24,24,30/)
+  })
+
+  it('does not float over the page with position:fixed', () => {
+    const badge = buildVoltBadge()
+
+    expect(badge).not.toMatch(/position:fixed/)
   })
 
   it('does not take the pointer and cannot be dismissed', () => {
@@ -242,14 +248,20 @@ describe('buildVoltBadge', () => {
 
     expect(badge).toContain('data-dsh-volt-dot')
     expect(badge).toContain('data-dsh-volt-text')
-    expect(badge).toContain('>--°C<')
+    expect(badge).toContain("--°C")
   })
 
   it('keeps the full story in the tooltip', () => {
     const badge = buildVoltBadge()
 
-    expect(badge).toContain('badge.title')
+    expect(badge).toContain('pill.title')
     expect(badge).toContain('最近一次欠压')
     expect(badge).toContain('温度 ')
+  })
+
+  it('re-attaches when the composer is rebuilt', () => {
+    const badge = buildVoltBadge()
+
+    expect(badge).toContain('MutationObserver')
   })
 })
