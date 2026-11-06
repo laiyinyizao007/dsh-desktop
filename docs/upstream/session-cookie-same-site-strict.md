@@ -1,6 +1,6 @@
 # dsh-client-connection: the session cookie is `SameSite=Strict`, which breaks a cross-site arrival
 
-**Repository**: the Harness — `@deepseek-ai/dsh-client-connection`
+**Repository**: https://github.com/deepseek-ai/deepseek-harness — the `@deepseek-ai/dsh-client-connection` package
 **File**: `lib/index.js`, the `sessionCookie` function
 
 ## The symptom
@@ -70,6 +70,18 @@ can rewrite the header on the way out — that is what the DSH Desktop does
 (`scripts/dsh-web-session-cookie.mjs`) — but every deployment has to
 rediscover the loop, and a client that talks to the Harness directly gets
 no fix at all.
+
+## The workaround the DSH Desktop uses, for comparison
+
+The proxy rewrites `SameSite=Strict` to `SameSite=Lax` on the way out, and
+adds `Secure` when the client's own request arrived over HTTPS. That last
+part cannot be decided from `X-Forwarded-Proto` alone: the tunnel
+terminates TLS at the edge and speaks HTTP to nginx, which speaks HTTP to
+the proxy, so nginx overwrites that header with its own scheme. The edge's
+own record of the scheme — `CF-Visitor` — is the one that tells the truth.
+
+A proxy can only do this for the deployments that have a proxy. The cookie
+is the Harness's, and the Harness is what mints it.
 
 ## How to see it
 

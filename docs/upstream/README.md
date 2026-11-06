@@ -22,5 +22,8 @@ chat message, a bookmark in another app.
 | --- | --- | --- |
 | `@deepseek-ai/dsh-client-connection` | `session-cookie-same-site-strict.md` | The session cookie is `SameSite=Strict`, so a cross-site arrival never finishes the token exchange and the app never loads. |
 
+The Harness's repository has issues disabled, so this one goes to
+**Discussions** rather than an issue.
+
 The plugin also watches its own adaptations: see "Watching the adaptations"
 in the responsive plugin's README.
