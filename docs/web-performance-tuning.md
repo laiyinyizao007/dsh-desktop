@@ -255,9 +255,7 @@ logrotate 保留（改成每周、保留 4 份）——它只清掉日志里那�
 > **注意**：Cloudflare **默认不缓存**这些路径——它们没有可缓存的扩展名，源站给的
 > `Cache-Control` 不足以让边缘收下，实测仍是 `cf-cache-status: DYNAMIC`。
 > 要让它们真正出隧道，需要在 Cloudflare 控制台给这四条路径建一条
-> **Cache Rule → Cache Everything**（本机没有 zone 级 API token，只能手工建：
-> `~/.cloudflared/cert.pem` 里的 Argo tunnel token 调 `/zones/<id>/rulesets` 返回
-> **403 Authentication error**，它只有 tunnel/DNS 权限）。
+> **Cache Rule → Cache Everything**（这条规则已经建好，见下面的补记）。
 >
 > 这几个接口的内容不敏感（电源状态、重启状态、agent 状态、市场目录），
 > 边缘缓存会忽略 Cookie，等于**这些响应对任何知道域名的人可见**——站点本身

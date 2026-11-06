@@ -6,6 +6,12 @@ Linux as "Not currently supported". This document describes running the
 plugin market, onboarding, image generation) and phone access, without
 building an Electron app.
 
+Two documents go deeper than this one:
+[Web 加载性能：部署结构与维护说明](web-performance-tuning.md) covers the nginx
+and Cloudflare layers in front of the Harness, the edge cache and the tunnel
+tuning; [火山引擎（火山方舟 Ark）接入记录](volcengine-ark-provider.md) covers
+the LLM route.
+
 Everything here is built on two facts about the upstream project:
 
 1. **`dsh web` is the product.** The Electron shell is a window around a local
@@ -117,6 +123,27 @@ const response = await fetch(`${base}/?token=${token}`, { redirect: 'manual' })
 ```
 
 Loop: re-read the log, try the candidate token, stop when it answers 303.
+
+**Where the log is rotated, the token has to live somewhere else.**
+`scripts/dsh-web-capture-token.mjs` waits for the Harness to print its URL,
+**proves the token is live** with the check above, and only then writes it to
+`/var/lib/dsh-web/launch-token` (`0600`) together with the Harness's PID and
+start time:
+
+```bash
+node scripts/dsh-web-capture-token.mjs --wait 30
+```
+
+`dsh-web.service` runs it as an `ExecStartPost`, so every Harness start
+captures the new token without anyone watching. The proxy reads the log
+first and this file second, and it accepts the file only when the identity
+recorded in it still matches the running Harness — a token belonging to a
+Harness that has been replaced is not used to answer a request.
+
+A log rotation that takes the token away is not a small problem: the proxy
+has no token to give an anonymous visitor, so every new browser gets a 401
+while the browsers that still hold a session cookie keep working. The site
+looks fine to the one person who is not looking at it.
 
 ---
 
@@ -268,7 +295,11 @@ behaviours make this non-trivial:
    name is `SHA256(authority)` and the payload embeds the same authority.
 4. **Cordis plugin bundles use `??` in the path** — `plugins/??<list>&rev=`.
    A URL parser treats everything after the first `?` as a query string and
-   truncates the path to `/plugins/`, which 404s a 9 MB bundle.
+   truncates the path to `/plugins/`, which 404s a 9 MB bundle. The proxy
+   rewrites the URL the page advertises to `plugins/<list>.js?rev=…&proxy=2`
+   — a path that ends in `.js`, which is what an edge cache keys on — and
+   reverses the rewrite on the way upstream. Without that rewrite the whole
+   plugin graph comes back through the tunnel on every page load.
 
 The WebSocket upgrade must be forwarded too. The Harness multiplexes every
 server-push stream over one socket at `/api/remote.mux`; without it the
@@ -285,7 +316,14 @@ dsh web --host <ip> --port 43129 \
 Do **not** tie the proxy to the Harness with `Requires=dsh-web.service`: it
 would restart the proxy whenever the Harness restarts, dropping live
 WebSocket clients and leaving the URL answering 502 in the gap. The proxy
-reads the token from the log on every request, so it survives on its own.
+reads the token from the log on every request, and from
+`/var/lib/dsh-web/launch-token` when the log no longer holds one, so it
+survives on its own.
+
+In front of the proxy sits nginx, which serves the static assets itself and
+normalises the `Host` and `Origin` headers so that one session cookie is
+valid through every entry point — the public domain, the LAN address and the
+Tailscale address. `docs/web-performance-tuning.md` has the layout.
 
 ### The power badge
 
@@ -304,8 +342,12 @@ The readings live in `scripts/dsh-web-volt.mjs`, and the proxy serves them at
   through the tunnel, and the readings are the machine's business rather
   than the world's.
 
-The badge polls every 5 s and the proxy caches the reading for the same 5 s,
-so the kernel log is read about once a poll.
+The badge polls every 30 s, and the endpoint is one of the four the edge
+cache is allowed to hold, so the kernel log is read about once a poll and
+the answer comes from the edge rather than from the tunnel. Thirty seconds
+rather than five: what the badge watches is whether the machine is
+undervoltage right now, and nobody can act on that faster than they can
+read it.
 
 ---
 
@@ -392,6 +434,17 @@ python3 scripts/dsh-rpc.py credentials/set \
 `~/.dsh/storages/` — readable YAML that survives restarts and can be
 version-controlled.
 
+Volcengine's Ark is configured the same way, as a `volcengine` provider
+beside the MiniMax one, with its key in the credential store under
+`VOLCENGINE_API_KEY`. It has its own rules — the models that answer, the
+two API shapes it accepts, and the two patches the route needs — and they
+are written down in
+[火山引擎（火山方舟 Ark）接入记录](volcengine-ark-provider.md).
+
+Keep **one** route per vendor. A provider whose key belongs to another
+vendor still shows up in the model picker and cannot answer anything, and
+a second route to the same vendor only splits the model list in two.
+
 `locale` and `permission` are runtime state, not settings: writing them
 answers `Config field "x" is not volatile`. Set them in the UI.
 
@@ -476,10 +529,35 @@ scripts/dsh-rebuild.sh --no-patches # restart and verify only
 scripts/dsh-rebuild.sh --check      # report only, change nothing
 ```
 
-The client bundles are served with `cache-control: no-store`. A response is
-immutable for a given revision, but the *set* of revisions changes whenever
-a bundle is rebuilt — so a cached `plugins/??…&rev=…` URL can name a
-revision that no longer exists.
+A revisioned bundle is content-addressed, so the proxy serves it with
+`cache-control: public, max-age=31536000, immutable` and advertises it under
+a URL an edge cache can key on. The *set* of revisions changes whenever a
+bundle is rebuilt — and a rebuilt bundle has a new URL, so the edge's old
+entries are simply never asked for again.
+
+After a Harness restart the edge holds nothing for the new revisions, so the
+first visitor pulls the whole graph back through the tunnel.
+`dsh-web-warm-cache.service` fetches it once, before anybody asks for it,
+and a timer runs it every ten minutes. Run it by hand after an upgrade:
+
+```bash
+sudo systemctl start dsh-web-warm-cache.service
+```
+
+The log must say `N warmed`. `0 warmed` means the page named no bundle at
+all — the Harness is not up, or its launch token is gone — and the unit
+fails rather than exiting quietly.
+
+`scripts/dsh-cold-load-probe.sh` measures what a visitor actually waits
+for, through whichever entry point it is given:
+
+```bash
+scripts/dsh-cold-load-probe.sh https://dsh.example.com
+scripts/dsh-cold-load-probe.sh http://10.32.7.113:43128
+```
+
+It prints the edge's answer for every bundle, so a line that says `MISS`
+where it should say `HIT` is the first thing to look at.
 
 ## 11. The profile layer at a glance
 
