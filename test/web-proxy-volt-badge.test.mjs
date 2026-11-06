@@ -213,11 +213,21 @@ describe('buildVoltBadge', () => {
     expect(badge).toContain('setInterval')
   })
 
-  it('sits at the top, not at the bottom', () => {
+  it('sits at the top centre, not at the bottom or the corners', () => {
     const badge = buildVoltBadge()
 
     expect(badge).toMatch(/top:calc\(12px \+ env\(safe-area-inset-top\)\)/)
+    expect(badge).toMatch(/left:50%;/)
+    expect(badge).toMatch(/translateX\(-50%\)/)
     expect(badge).not.toMatch(/bottom:/)
+    expect(badge).not.toMatch(/right:\d/)
+  })
+
+  it('does not take the pointer and cannot be dismissed', () => {
+    const badge = buildVoltBadge()
+
+    expect(badge).toMatch(/pointer-events:none/)
+    expect(badge).not.toContain("addEventListener('click'")
   })
 
   it('shows only the dot and the temperature', () => {
