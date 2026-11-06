@@ -40,3 +40,10 @@ docs/mobile-connection-latency.zh.md
 
 # Local design iterations; production artwork lives in build/dmg/.
 /docs/dmg-install-preview/
+
+# Playwright MCP scratch output (screenshots, console logs, snapshots)
+/.playwright-mcp/
+/view[0-9]*.png
+/portfolio-top.png
+/pv-hero.png
+/pv-top.png
