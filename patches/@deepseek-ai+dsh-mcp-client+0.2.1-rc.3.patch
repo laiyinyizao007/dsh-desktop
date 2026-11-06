@@ -1,10 +1,49 @@
 diff --git a/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js b/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
-index a0c19c8..12bac14 100644
+index a0c19c8..d6d4ad0 100644
 --- a/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js
-@@ -125,8 +125,10 @@ function publicToolName(serverName, rawName) {
+@@ -124,9 +124,49 @@ function publicToolName(serverName, rawName) {
+ * @returns A map of registered public tool names to their unregister
  *   disposers — the exact set of live registrations owned by this server.
  */
++/** JSON Schema type keywords strict providers accept. */
++const VALID_JSON_SCHEMA_TYPES = /* @__PURE__ */ new Set(["object", "array", "string", "number", "integer", "boolean", "null"]);
++/**
++ * Drop `type` keywords that are not valid JSON Schema types (for example `"json"` or
++ * `"any"`). Strict providers such as Volcengine Ark reject the entire request when a
++ * single tool schema carries a non-JSON-Schema type, which would break every tool of
++ * the session — including the tools unrelated to the offending server.
++ * @param schema - Candidate JSON Schema node.
++ * @returns The same node, or a sanitized copy without invalid `type` keywords.
++ */
++function sanitizeInputSchema(schema) {
++	if (schema === null || typeof schema !== "object") return schema;
++	if (Array.isArray(schema)) return schema.map(sanitizeInputSchema);
++	let changed = false;
++	const copy = { ...schema };
++	if (typeof copy.type === "string" && !VALID_JSON_SCHEMA_TYPES.has(copy.type)) {
++		delete copy.type;
++		changed = true;
++	} else if (Array.isArray(copy.type)) {
++		const filtered = copy.type.filter(entry => typeof entry === "string" && VALID_JSON_SCHEMA_TYPES.has(entry));
++		if (filtered.length !== copy.type.length) {
++			if (filtered.length === 1) copy.type = filtered[0];
++			else if (filtered.length > 0) copy.type = filtered;
++			else delete copy.type;
++			changed = true;
++		}
++	}
++	for (const key of Object.keys(copy)) {
++		const value = copy[key];
++		if (value === null || typeof value !== "object") continue;
++		const sanitized = sanitizeInputSchema(value);
++		if (sanitized !== value) {
++			copy[key] = sanitized;
++			changed = true;
++		}
++	}
++	return changed ? copy : schema;
++}
  async function syncTools(client, ctx, opts, previous) {
 +	opts.startupSignal?.throwIfAborted();
  	const definitions = /* @__PURE__ */ new Map();
@@ -14,7 +53,16 @@ index a0c19c8..12bac14 100644
  	for (const tool of response.tools) {
  		const publicName = publicToolName(opts.serverName, tool.name);
  		if (definitions.has(publicName)) throw new Error(`mcp-client(${opts.serverName}): server listed tool "${tool.name}" more than once — invalid tool list`);
-@@ -440,6 +442,24 @@ const RECONNECT_DEFAULTS = Object.freeze({
+@@ -134,7 +174,7 @@ async function syncTools(client, ctx, opts, previous) {
+ 			name: publicName,
+ 			rawName: tool.name,
+ 			description: tool.description ?? "",
+-			inputSchema: tool.inputSchema,
++			inputSchema: sanitizeInputSchema(tool.inputSchema),
+ 			outputSchema: tool.outputSchema,
+ 			taskRequired: tool.execution?.taskSupport === "required",
+ 			call: (args, execution) => client.callTool({
+@@ -440,6 +480,24 @@ const RECONNECT_DEFAULTS = Object.freeze({
  /** Default UTF-8 byte limit for attributed server instructions. */
  const DEFAULT_MAX_INSTRUCTION_BYTES = 32768;
  const GENERATION_CLOSE_TIMEOUT_MS = 5e3;
@@ -39,23 +87,23 @@ index a0c19c8..12bac14 100644
  /**
  * The one explicit resolve step from raw reconnect config to the policy the
  * supervisor runs. Programmatic construction may bypass Schemastery
-@@ -547,10 +567,12 @@ function startConnection(ctx, config, policy) {
+@@ -547,10 +605,12 @@ function startConnection(ctx, config, policy) {
  			const timeout = setTimeout(() => {
  				resolve(false);
  			}, GENERATION_CLOSE_TIMEOUT_MS);
 -			timeout.unref();
 -			closed.then(() => {
 +			closed.then((result) => {
-+				clearTimeout(timeout);
-+				resolve(result !== false);
-+			}, () => {
  				clearTimeout(timeout);
 -				resolve(true);
++				resolve(result !== false);
++			}, () => {
++				clearTimeout(timeout);
 +				resolve(false);
  			});
  		});
  	}
-@@ -611,6 +633,13 @@ function startConnection(ctx, config, policy) {
+@@ -611,6 +671,13 @@ function startConnection(ctx, config, policy) {
  		let attemptSettled = false;
  		let closeObserved = false;
  		let transport;
@@ -69,7 +117,7 @@ index a0c19c8..12bac14 100644
  		const hasClosed = () => closeObserved;
  		client = generation;
  		closeClient = closeGeneration;
-@@ -620,7 +649,11 @@ function startConnection(ctx, config, policy) {
+@@ -620,7 +687,11 @@ function startConnection(ctx, config, policy) {
  			if (attemptSettled) generationDown(generation);
  		};
  		/** Unattached probes close through their transport; attached clients must also report transport closure. */
@@ -82,7 +130,7 @@ index a0c19c8..12bac14 100644
  			const attached = generation.transport !== void 0;
  			try {
  				await (attached ? generation.close() : transport?.close());
-@@ -633,15 +666,21 @@ function startConnection(ctx, config, policy) {
+@@ -633,15 +704,21 @@ function startConnection(ctx, config, policy) {
  			if (!isCurrent(generation)) return;
  			ctx.logger.info(`${label}: tool list changed, re-syncing`);
  			try {
@@ -106,7 +154,7 @@ index a0c19c8..12bac14 100644
  			if (hasClosed()) {
  				attemptSettled = true;
  				generationDown(generation);
-@@ -654,14 +693,30 @@ function startConnection(ctx, config, policy) {
+@@ -654,14 +731,30 @@ function startConnection(ctx, config, policy) {
  			const serverText = generation.getInstructions()?.trimEnd() ?? "";
  			instructions = serverText ? `### MCP server: ${config.serverName}\n\n${serverText}` : "";
  			if (Buffer.byteLength(instructions) > maxInstructionBytes) throw new Error(`${label}: server instructions exceed maxInstructionBytes (${maxInstructionBytes})`);
@@ -138,7 +186,7 @@ index a0c19c8..12bac14 100644
  		}
  		attemptSettled = true;
  		if (hasClosed()) {
-@@ -785,6 +840,7 @@ const Config = z.union([z.object({
+@@ -785,6 +878,7 @@ const Config = z.union([z.object({
  	env: z.dict(String).default({}),
  	cwd: z.string().default(""),
  	toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
@@ -146,7 +194,7 @@ index a0c19c8..12bac14 100644
  	failOnStartupError: z.boolean().default(false),
  	maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
  	reconnect: Reconnect
-@@ -794,6 +850,7 @@ const Config = z.union([z.object({
+@@ -794,6 +888,7 @@ const Config = z.union([z.object({
  	url: z.string().required(),
  	headers: z.dict(String).default({}),
  	toolCallTimeoutMs: z.number().default(DEFAULT_TOOL_CALL_TIMEOUT_MS),
@@ -154,7 +202,7 @@ index a0c19c8..12bac14 100644
  	failOnStartupError: z.boolean().default(false),
  	maxInstructionBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INSTRUCTION_BYTES),
  	reconnect: Reconnect
-@@ -807,6 +864,8 @@ const Config = z.union([z.object({
+@@ -807,6 +902,8 @@ const Config = z.union([z.object({
  * @returns startup readiness after connection and initial tool discovery settle.
  */
  async function apply(ctx, config) {

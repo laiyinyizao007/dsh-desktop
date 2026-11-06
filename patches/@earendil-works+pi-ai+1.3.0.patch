@@ -1,5 +1,5 @@
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js b/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js
-index befb18b..ec3d7eb 100644
+index befb18b..7b7da85 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js
 @@ -588,7 +588,6 @@ export const stream = (model, context, options) => {
@@ -11,7 +11,7 @@ index befb18b..ec3d7eb 100644
                                  type: "toolcall_delta",
                                  contentIndex: index,
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js b/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js
-index 6ec62d0..497b33d 100644
+index 6ec62d0..abe5eee 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/bedrock-converse-stream.js
 @@ -461,7 +461,6 @@ function handleContentBlockDelta(event, blocks, output, stream) {
@@ -23,7 +23,7 @@ index 6ec62d0..497b33d 100644
      }
      else if (delta?.reasoningContent) {
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js b/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js
-index 9038a1c..17b2c98 100644
+index 9038a1c..afda5ea 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/mistral-conversations.js
 @@ -570,7 +570,6 @@ async function consumeChatStream(model, output, stream, mistralStream, onProvide
@@ -35,7 +35,7 @@ index 9038a1c..17b2c98 100644
                  type: "toolcall_delta",
                  contentIndex: toolBlocksByKey.get(key),
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
-index 0eeaffa..22e2beb 100644
+index 0eeaffa..fdafb4c 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js
 @@ -453,7 +453,6 @@ export const stream = (model, context, options) => {
@@ -47,10 +47,30 @@ index 0eeaffa..22e2beb 100644
                              else if (toolCall.custom?.input) {
                                  const nextInput = getCustomToolCallInput(block) + toolCall.custom.input;
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js
-index af5f042..f83575a 100644
+index af5f042..e3cbe6c 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js
-@@ -561,7 +561,6 @@ export async function processResponsesStream(openaiStream, output, stream, model
+@@ -199,10 +199,18 @@ export function convertResponsesMessages(model, context, allowedToolCallProvider
+                     else if (msgId.length > 64) {
+                         msgId = `msg_${shortHash(msgId)}`;
+                     }
++                    const sanitizedText = sanitizeSurrogates(textBlock.text);
++                    // An assistant turn that carries no visible text (a tool-only turn)
++                    // must not be replayed as an empty output_text block: strict
++                    // providers such as Volcengine Ark reject the whole request with
++                    // "missing input.content.text" when any output_text block is empty.
++                    if (sanitizedText.length === 0) {
++                        continue;
++                    }
+                     output.push({
+                         type: "message",
+                         role: "assistant",
+-                        content: [{ type: "output_text", text: sanitizeSurrogates(textBlock.text), annotations: [] }],
++                        content: [{ type: "output_text", text: sanitizedText, annotations: [] }],
+                         status: "completed",
+                         id: msgId,
+                         phase: parsedSignature?.phase,
+@@ -561,7 +569,6 @@ export async function processResponsesStream(openaiStream, output, stream, model
              if (!slot || slot.block.partialJson === undefined)
                  continue;
              slot.block.partialJson += event.delta;
@@ -59,7 +79,7 @@ index af5f042..f83575a 100644
          }
          else if (event.type === "response.function_call_arguments.done") {
 diff --git a/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js b/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js
-index 7da1c45..39bea96 100644
+index 7da1c45..296d131 100644
 --- a/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js
 +++ b/node_modules/@earendil-works/pi-ai/dist/api/pi-messages.js
 @@ -155,8 +155,6 @@ function createEventConverter(model) {
