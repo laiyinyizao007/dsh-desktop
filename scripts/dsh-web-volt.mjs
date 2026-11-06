@@ -174,16 +174,16 @@ export async function readVoltState(deps = {}) {
 /**
  * The badge itself.
  *
- * It is a single coloured dot in the top corner: the colour carries the
- * state — green for a healthy rail, amber for events that already happened,
- * red for a rail that is sagging right now, grey when the machine does not
- * answer. Nothing else is drawn, so the dot takes no room and covers
- * nothing; it also takes no pointer, so it cannot sit on a tap. The story
+ * It is a single coloured dot in the top edge of the screen: the colour
+ * carries the state — green for a healthy rail, amber for events that
+ * already happened, red for a rail that is sagging right now, grey when the
+ * machine does not answer. Nothing else is drawn, so the dot takes no room
+ * and covers nothing; it also takes no pointer, so it cannot sit on a tap. The story
  * behind the colour — the temperature, the load, the last under-voltage
  * event — lives in the tooltip, where it is there for whoever asks.
  */
 export function buildVoltBadge() {
-  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:2147483000;width:10px;height:10px;border-radius:50%;background:#a6adc8;box-shadow:0 0 0 1px rgba(255,255,255,.35);user-select:none;pointer-events:none"></div>
+  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));transform:translateX(-50%);z-index:2147483000;width:10px;height:10px;border-radius:50%;background:#a6adc8;box-shadow:0 0 0 1px rgba(255,255,255,.35);user-select:none;pointer-events:none"></div>
 <script>
 (function () {
   var dot = document.querySelector('[${BADGE_MARKER}]')

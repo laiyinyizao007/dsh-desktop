@@ -213,14 +213,15 @@ describe('buildVoltBadge', () => {
     expect(badge).toContain('setInterval')
   })
 
-  it('is a single dot at the top-right, not a pill at the bottom', () => {
+  it('is a single dot at the top centre, not a pill at the bottom', () => {
     const badge = buildVoltBadge()
 
     expect(badge).toMatch(/top:calc\(8px \+ env\(safe-area-inset-top\)\)/)
-    expect(badge).toMatch(/right:8px/)
+    expect(badge).toMatch(/left:50%/)
+    expect(badge).toMatch(/translateX\(-50%\)/)
     expect(badge).toMatch(/width:10px/)
     expect(badge).not.toMatch(/bottom:/)
-    expect(badge).not.toMatch(/left:50%/)
+    expect(badge).not.toMatch(/right:\d/)
   })
 
   it('does not take the pointer and cannot be dismissed', () => {
