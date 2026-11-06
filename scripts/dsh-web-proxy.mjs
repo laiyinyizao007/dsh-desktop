@@ -26,6 +26,7 @@ import { execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
 import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mjs'
+import { injectBootNotice } from './dsh-web-boot-notice.mjs'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
 
@@ -1217,7 +1218,11 @@ const server = createServer((clientRequest, clientResponse) => {
           try {
             // The page carries the badge that shows the machine's power
             // state, so a brownout is visible to whoever is looking at it.
-            const rewritten = injectVoltBadge(cacheableBundleUrl(raw.toString('utf8')))
+            // It also carries the notice that says the app is still coming
+            // up, with a retry button — the plugin graph is several
+            // megabytes, and a reader on a slow link would otherwise be
+            // looking at a white screen with no way to tell.
+            const rewritten = injectBootNotice(injectVoltBadge(cacheableBundleUrl(raw.toString('utf8'))))
             const body = Buffer.from(rewritten, 'utf8')
             page['content-length'] = String(body.length)
             clientResponse.writeHead(upstreamResponse.statusCode ?? 502, page)
