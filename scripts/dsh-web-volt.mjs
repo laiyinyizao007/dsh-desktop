@@ -174,16 +174,18 @@ export async function readVoltState(deps = {}) {
 /**
  * The badge itself.
  *
- * It is deliberately small and in the corner: the point is to be legible
- * without being in the way of the page it sits on. The colour carries the
- * state — green for a healthy rail, amber for events that already
- * happened, red for a rail that is sagging right now — and the text spells
- * the same thing out for anyone who cannot read the colour.
+ * It is deliberately small and sits at the top, out of the way of the page:
+ * the point is to be legible without taking up the room at the bottom, where
+ * a phone puts its thumb and the keyboard. The colour of the dot carries the
+ * state — green for a healthy rail, amber for events that already happened,
+ * red for a rail that is sagging right now — and the temperature is the one
+ * reading worth seeing at a glance. The rest of the story goes into the
+ * tooltip, where it is there for whoever asks.
  */
 export function buildVoltBadge() {
-  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;right:12px;bottom:12px;z-index:2147483000;display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:999px;background:rgba(24,24,30,.86);color:#cdd6f4;font:12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 1px 8px rgba(0,0,0,.4);cursor:pointer;user-select:none;backdrop-filter:blur(4px)">
-  <span data-dsh-volt-dot style="width:9px;height:9px;border-radius:50%;background:#a6adc8;flex:none"></span>
-  <span data-dsh-volt-text>电源 读取中</span>
+  return `<div ${BADGE_MARKER} title="电源状态读取中" style="position:fixed;right:12px;top:calc(12px + env(safe-area-inset-top));z-index:2147483000;display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:rgba(24,24,30,.72);color:#cdd6f4;font:11px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 1px 6px rgba(0,0,0,.35);cursor:pointer;user-select:none;backdrop-filter:blur(4px)">
+  <span data-dsh-volt-dot style="width:7px;height:7px;border-radius:50%;background:#a6adc8;flex:none"></span>
+  <span data-dsh-volt-text>--°C</span>
 </div>
 <script>
 (function () {
@@ -207,22 +209,22 @@ export function buildVoltBadge() {
       .then(function (state) {
         var described = describe(state)
         dot.style.background = COLORS[described[1]]
-        var parts = [described[0]]
+        // The face is just the temperature next to the dot; the colour
+        // tells the rest. The tooltip keeps the full story.
+        var temp = state !== null && state !== undefined && typeof state.temperature === 'number'
+          ? Math.round(state.temperature) + '°C'
+          : '--°C'
+        text.textContent = temp
         var details = [described[0]]
         if (state !== null && state !== undefined && typeof state.temperature === 'number') {
-          parts.push(Math.round(state.temperature) + '°C')
           details.push('温度 ' + state.temperature.toFixed(1) + '°C')
         }
         if (state !== null && state !== undefined && Array.isArray(state.load)) {
-          parts.push('负载 ' + state.load[0].toFixed(1))
           details.push('负载 ' + state.load.map(function (value) { return value.toFixed(2) }).join(' / '))
         }
         if (state !== null && state !== undefined && typeof state.lastEvent === 'string') {
           details.push('最近一次欠压 ' + state.lastEvent)
         }
-        text.textContent = parts.join(' · ')
-        // The pill is small on purpose, so the readings that do not fit in
-        // it go into the tooltip instead of being dropped.
         badge.title = details.join(' · ')
       })
       .catch(function () {

@@ -212,4 +212,27 @@ describe('buildVoltBadge', () => {
     expect(badge).toContain(VOLT_ENDPOINT)
     expect(badge).toContain('setInterval')
   })
+
+  it('sits at the top, not at the bottom', () => {
+    const badge = buildVoltBadge()
+
+    expect(badge).toMatch(/top:calc\(12px \+ env\(safe-area-inset-top\)\)/)
+    expect(badge).not.toMatch(/bottom:/)
+  })
+
+  it('shows only the dot and the temperature', () => {
+    const badge = buildVoltBadge()
+
+    expect(badge).toContain('data-dsh-volt-dot')
+    expect(badge).toContain('data-dsh-volt-text')
+    // The face is the temperature, not a sentence.
+    expect(badge).toContain('>--°C<')
+  })
+
+  it('keeps the full story in the tooltip', () => {
+    const badge = buildVoltBadge()
+
+    expect(badge).toContain('badge.title')
+    expect(badge).toContain('最近一次欠压')
+  })
 })
