@@ -4,10 +4,10 @@ Documentation=https://github.com/dataelement/dsh-desktop
 
 [Service]
 Type=oneshot
-User=averypi
-Group=averypi
-WorkingDirectory=/home/averypi/dsh-desktop
-Environment=DSH_HOME=/home/averypi/.dsh
+User=${USER}
+Group=${GROUP}
+WorkingDirectory=${REPO}
+Environment=DSH_HOME=${DSH_HOME}
 Environment=DSH_HARNESS_SERVICE=dsh-web.service
-Environment=DSH_PROXY_PORT=43128
-ExecStart=/home/averypi/dsh-desktop/scripts/dsh-auto-restart.sh
+Environment=DSH_PROXY_PORT=${PROXY_PORT}
+ExecStart=${REPO}/scripts/dsh-auto-restart.sh

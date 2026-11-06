@@ -63,6 +63,7 @@ plugins/<插件列表>.js?rev=<hash>&proxy=2
 | 预热脚本 | `scripts/dsh-web-warm-cache.mjs`（仓库内） | 让边缘缓存提前持有所有 bundle |
 | token 捕获脚本 | `scripts/dsh-web-capture-token.mjs`（仓库内） | 把启动 token 从日志复制到 `/var/lib/dsh-web/launch-token` |
 | 冷加载探针 | `scripts/dsh-cold-load-probe.sh`（仓库内） | 测一次真实的冷加载，输出可对比的基线 |
+| 部署安装器 | `scripts/dsh-web-deploy.sh`（仓库内） | 把上面这些单元、nginx、sysctl、logrotate、隧道配置按模板装上 |
 | dsh web | `dsh-web.service` | 真正提供 API 与模块图 |
 
 ### 为什么 nginx 的 worker 跑在 `averypi` 而不是 `www-data`

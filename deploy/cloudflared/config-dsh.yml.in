@@ -1,0 +1,20 @@
+# The tunnel for the DSH web UI.
+#
+# quic rather than http2: this link reorders, and on TCP a lost packet
+# blocks everything behind it while QUIC recovers per stream.
+#
+# keepAliveConnections is the pool of idle connections to the origin. The
+# default is 100; a smaller number is over-tightening.
+tunnel: ${TUNNEL_ID}
+credentials-file: ${CREDENTIALS}
+protocol: quic
+ingress:
+  - hostname: ${DOMAIN}
+    service: http://127.0.0.1:${ENTRY_PORT}
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 10s
+      tlsTimeout: 10s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+  - service: http_status:404

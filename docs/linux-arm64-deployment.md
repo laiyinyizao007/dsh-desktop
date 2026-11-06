@@ -99,7 +99,37 @@ the platforms they were written for:
 
 ---
 
-## 2. Run the Harness
+## 2. Install the deployment
+
+The pieces below — the Harness as a service, the reverse proxy in front of
+it, nginx serving the static assets, the tunnel, the kernel's TCP
+parameters — used to be copied onto the machine by hand, one file at a time.
+A copy is a second copy: the machine drifts from the repository, and the
+next person cannot tell which of the two is right.
+
+They are templates now, and one command installs them:
+
+```bash
+sudo scripts/dsh-web-deploy.sh install --domain dsh.example.com
+```
+
+It writes the systemd units, the nginx configuration, the sysctl file, the
+log rotation rule and the tunnel configuration, and it is idempotent — a
+file whose content already matches is left alone. `deploy/README.md` says
+what it writes and what it deliberately does not.
+
+```bash
+scripts/dsh-web-deploy.sh check    # what is installed, what is missing
+scripts/dsh-web-deploy.sh print    # what would be written
+```
+
+Two things are still the deployment's own business and are not installed
+for it: the model provider and its key (see section 8), and the Cloudflare
+account — the tunnel and its DNS record are created with the official CLI,
+and the edge cache rule is created with a zone token when one is in the
+environment.
+
+## 3. Run the Harness
 
 ```bash
 node node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host <ip> --port 43129
@@ -147,7 +177,7 @@ looks fine to the one person who is not looking at it.
 
 ---
 
-## 3. The Desktop host plugins
+## 4. The Desktop host plugins
 
 Copy the overlay from `build/dsh-desktop.patch.yml` into the profile's patch
 layer (`$DSH_HOME/profiles/<profile>/cordis.patch.yml`).
@@ -210,7 +240,7 @@ packaged Desktop points at its own resources directory.
 
 ---
 
-## 4. The plugin market
+## 5. The plugin market
 
 Upstream Desktop mounts the community market through a separate patch layer
 (`build/dsh-desktop-market.patch.yml`):
@@ -272,7 +302,7 @@ The market index is about 2.8 MB, and a slow link can truncate it. A
 truncated download fails JSON parsing, and the UI reports the index as
 invalid rather than as a network problem.
 
-## 5. A bookmarkable public URL
+## 6. A bookmarkable public URL
 
 `dsh web` authenticates every request with the launch token, so a public URL
 cannot just point at it — the visitor would need a fresh token after every
@@ -323,17 +353,17 @@ has arrived, and its pong has to make one more round trip. The server
 therefore terminates the socket it was in the middle of filling, every six
 to eight seconds, and the page starts over.
 
-The profile's patch layer raises the interval, which is all it takes:
+Fifteen seconds between pings gives the pong time to come back, and the
+repository's patch to the gateway is what sets it:
+`patches/@deepseek-ai+dsh-api-gateway+0.2.1-rc.3.patch` raises the default
+from two seconds to fifteen. The patch is applied by `npm install`, so a
+deployment gets the fix without knowing the setting exists.
 
-```yaml
-- id: typert-gateway
-  name: '@deepseek-ai/dsh-api-gateway'
-  config:
-    websocketHeartbeatIntervalMs: 15000
-```
-
-Fifteen seconds between pings gives the pong time to come back. This setting
-is read at boot, so it needs a Harness restart to take effect.
+The measured effect, over the same window on the same machine: the mux
+connection's lifetime went from a median of 13 s to a median of 23 s, and the
+page re-read itself 1.1 times a minute instead of 0.5. The connections that
+still die do so on the browser's side of the edge — the client's own path —
+and nothing on the server can hold those up.
 
 **How to tell the three things apart.** The nginx timing log says how long
 each mux connection lasted, and the access log's path counts say how often
@@ -415,7 +445,7 @@ The notice lives in `scripts/dsh-web-boot-notice.mjs`, and
 
 ---
 
-## 6. Phone access
+## 7. Phone access
 
 `src/main/mobile/lan-mobile-bridge.ts` is a **PIN-paired HTTP + WebSocket
 bridge with no Electron imports** — plain Node. Upstream the Electron main
@@ -477,7 +507,7 @@ proxy instead.
 
 ---
 
-## 7. Model configuration
+## 8. Model configuration
 
 `llm-pi-ai` routes to any provider in the pi-ai catalog, which already
 ships MiniMax:
@@ -514,7 +544,7 @@ answers `Config field "x" is not volatile`. Set them in the UI.
 
 ---
 
-## 8. Calling the Harness directly
+## 9. Calling the Harness directly
 
 `POST /api/<endpoint>` with:
 
@@ -533,7 +563,7 @@ Three rules:
 
 ---
 
-## 9. Verify with a real browser
+## 10. Verify with a real browser
 
 `curl` proves the HTML and the bundles load. It does **not** prove the client
 mounted, and it cannot see a WebSocket that never opened.
@@ -553,7 +583,7 @@ and reports what a screenshot alone does not: elements cut off at the right
 edge, text squeezed into a narrow column, and tap targets under 32 px.
 `scripts/look-at-mobile.py` runs the same probe against any other site.
 
-## 10. After changing a plugin
+## 11. After changing a plugin
 
 The Harness derives a client bundle's revision from the entry's `mtime`,
 `ctime` and size, and it recomputes those only when it starts or when the
@@ -623,7 +653,7 @@ scripts/dsh-cold-load-probe.sh http://10.32.7.113:43128
 It prints the edge's answer for every bundle, so a line that says `MISS`
 where it should say `HIT` is the first thing to look at.
 
-## 11. The profile layer at a glance
+## 12. The profile layer at a glance
 
 Everything above lands in the profile's patch layer
 (`$DSH_HOME/profiles/<profile>/cordis.patch.yml`), not in the repository.
@@ -650,13 +680,8 @@ does not own it. The rows a Linux web profile typically carries:
     model: MiniMax-M3
     reasoningEffort: high
 
-# The mux WebSocket's heartbeat (see section 5)
-- id: typert-gateway
-  name: '@deepseek-ai/dsh-api-gateway'
-  config:
-    websocketHeartbeatIntervalMs: 15000
 
-# The Desktop host plugins (see section 3)
+# The Desktop host plugins (see section 4)
 - id: ui-brand-official
   disabled: true
 - insert:
@@ -669,7 +694,7 @@ does not own it. The rows a Linux web profile typically carries:
     - id: dsh-desktop-market-installer
       name: dsh-desktop-market-installer
 
-# The plugin market (see section 4)
+# The plugin market (see section 5)
 - insert:
     - id: dsh-market
       name: "@deepseek-ai/dsh-plugin-market"

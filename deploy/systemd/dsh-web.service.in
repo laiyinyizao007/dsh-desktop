@@ -1,0 +1,55 @@
+[Unit]
+Description=DSH Desktop web (DeepSeek Harness browser UI)
+Documentation=https://github.com/dataelement/dsh-desktop
+After=network-online.target
+Wants=network-online.target
+# The Harness can fail in a loop, and the default rate limit would then leave
+# the unit down for good: the public URL answers 502 and nothing restarts it.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# The unit runs as the account that owns the checkout, so %h resolves to that
+# account's home rather than to /root.
+User=${USER}
+Group=${GROUP}
+WorkingDirectory=${REPO}
+Environment=DSH_HOME=${DSH_HOME}
+Environment=NODE_ENV=production
+Environment=SHELL=/bin/sh
+# subprocess-local uses $XDG_RUNTIME_DIR/systemd/private to detect a user
+# systemd manager, so that it can isolate the process tree it starts. A
+# system-level service has no such variable, and the isolation silently
+# degrades to the weaker mode.
+Environment=XDG_RUNTIME_DIR=/run/user/${UID}
+# The Harness's outbound traffic goes through a local proxy when one runs.
+# Node's fetch (undici) ignores the proxy variables, so preload a dispatcher
+# instead. This block is empty when there is no proxy.
+${PROXY_ENV}
+# --host must be one concrete interface address: the Harness rejects
+# wildcards. --trusted-host lists every authority the browser may reach; the
+# browser-trust fence rejects any /api request whose Host is not on it.
+ExecStart=${NODE} ${REPO}/node_modules/@deepseek-ai/dsh/lib/bin.js web --no-open --host ${BIND} --port ${HARNESS_PORT} --trusted-host ${BIND}:${HARNESS_PORT} --trusted-host ${BIND}:${ENTRY_PORT} --trusted-host ${PUBLIC_HOST}
+# `always`, not `on-failure`: the Harness can exit cleanly on its own, and
+# `on-failure` leaves the unit down in that case — the public URL then
+# answers 502 until someone starts it by hand.
+Restart=always
+RestartSec=5
+# The client bundles are pre-compressed so that an edge cache can keep them:
+# a bundle that is served as gzip is half the bytes of one served as
+# identity.
+ExecStartPost=-${NODE} ${REPO}/scripts/dsh-web-assets-precompress.mjs --quiet
+# The Harness prints its launch token once, on startup, and the proxy reads it
+# from the log. A log rotation takes that line away, and from then on the
+# proxy has no token to inject: every new browser gets a 401 while the
+# browsers that still hold a session cookie keep working, so the site looks
+# healthy to whoever is looking at it. This copies the token out of the log
+# into a file of its own, right after every start.
+ExecStartPost=-${NODE} ${REPO}/scripts/dsh-web-capture-token.mjs --wait 30
+# The launch token changes on every restart, and the mobile bridge reads it
+# from this file. Append mode keeps every run's URL line available.
+StandardOutput=append:${LOG_FILE}
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

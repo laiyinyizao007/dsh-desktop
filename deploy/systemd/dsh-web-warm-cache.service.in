@@ -1,0 +1,13 @@
+[Unit]
+Description=Warm the edge cache with the DSH client bundles
+Documentation=https://github.com/dataelement/dsh-desktop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=${USER}
+Group=${GROUP}
+WorkingDirectory=${REPO}
+Environment=DSH_HOME=${DSH_HOME}
+ExecStart=${NODE} ${REPO}/scripts/dsh-web-warm-cache.mjs --url https://${DOMAIN} --wait 60

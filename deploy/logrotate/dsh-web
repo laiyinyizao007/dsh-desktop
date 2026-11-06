@@ -1,0 +1,17 @@
+# The Harness's log holds the launch token on its first line, and the proxy
+# reads it from there. The token is also kept in a file of its own, so
+# truncating this one no longer takes the site down.
+#
+# Weekly rather than daily: the log grows with every Harness start, and the
+# proxy only needs the token while a Harness is running.
+#
+# copytruncate because the Harness holds the file open.
+${LOG_FILE} {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

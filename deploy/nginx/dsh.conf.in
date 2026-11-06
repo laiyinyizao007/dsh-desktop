@@ -1,0 +1,77 @@
+# The DSH web UI, served by nginx.
+#
+# Two things happen here that the reverse proxy cannot do for itself:
+#
+#  * The client bundles are static, content-addressed files. Serving them
+#    from disk skips the Node process entirely, and the pre-compressed
+#    variants are what an edge cache should keep.
+#  * The Host and Origin headers are rewritten to the Harness's own
+#    authority. The Harness binds its session cookie to the authority it
+#    sees and refuses an /api request whose Origin does not match it, and a
+#    browser can reach this deployment through the public domain, the LAN
+#    address and the phone bridge — three authorities for one page. Normalising
+#    them here makes one session cookie valid through every entrance.
+upstream dsh_harness_proxy {
+    server 127.0.0.1:${PROXY_PORT};
+    keepalive 32;
+}
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      '';
+}
+
+server {
+    listen ${NGINX_PORT} default_server;
+    listen [::]:${NGINX_PORT} default_server;
+    server_name _;
+    root ${REPO}/node_modules/@deepseek-ai/dsh-web-frontend/dist;
+    access_log /var/log/nginx/dsh_timing.log dsh_timing;
+
+    location /assets/ {
+        brotli_static on;
+        gzip_static on;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        access_log off;
+        try_files $uri =404;
+    }
+
+    location ~ ^/dsh-desktop-logo(-light|-dark)?\.png$ {
+        brotli_static on;
+        gzip_static on;
+        add_header Cache-Control "public, max-age=86400" always;
+        access_log off;
+    }
+
+    location ~ ^/favicon(-dark)?\.svg$ {
+        brotli_static on;
+        gzip_static on;
+        add_header Cache-Control "public, max-age=604800" always;
+        access_log off;
+    }
+
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache" always;
+        access_log off;
+    }
+
+    location / {
+        proxy_pass http://dsh_harness_proxy;
+        proxy_http_version 1.1;
+        # Every header here has to be written out in full. Once a location
+        # sets any proxy_set_header, the server block's own set is discarded,
+        # and a missing Host makes the Harness sign the cookie against the
+        # upstream group name — which answers every /api request with 403.
+        proxy_set_header Host              ${BIND}:${HARNESS_PORT};
+        proxy_set_header Origin            http://${BIND}:${HARNESS_PORT};
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}

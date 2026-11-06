@@ -1,0 +1,48 @@
+diff --git a/node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js b/node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js
+index f0e7770..8a7c70c 100644
+--- a/node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-api-gateway/lib/index.js
+@@ -698,7 +698,23 @@ function rejectRemoteStreamUpgrade(socket, status) {
+ * @module @deepseek-ai/dsh-api-gateway
+ */
+ const NEVER_ABORTED_SIGNAL = new AbortController().signal;
+-const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 2e3;
++/**
++* How long the mux WebSocket may go without answering a ping before it is
++* terminated.
++*
++* Two seconds is short enough to matter on a slow link. The ping is queued
++* behind whatever the server is pushing, and the server pushes megabytes of
++* events to a client that is reaching it over a tunnel; the client does not
++* see the ping until that data has arrived, and its pong has to make one
++* more round trip. A socket that misses two pongs is therefore terminated
++* while it is still being filled — and every termination makes the client
++* re-read the model catalog and the whole Session list, which is what made
++* the page reload itself every few seconds.
++*
++* Fifteen seconds leaves the pong time to come back, and a client that is
++* really gone is still noticed within half a minute.
++*/
++const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 15_000;
+ const DEFAULT_STREAM_INBOX_BYTES = 262144;
+ const EMPTY_ASYNC_ITERABLE = { [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({
+ 	value: void 0,
+diff --git a/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/index.js b/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/index.js
+index 4b0e2c5..7c4d155 100644
+--- a/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/index.js
++++ b/node_modules/@deepseek-ai/dsh-api-gateway/lib/types/index.js
+@@ -14,7 +14,13 @@ import { RemoteError, isRemoteJsonValue, remoteErrorOf, remoteMethods, } from '@
+ import { RemoteStreamMuxServer, rejectRemoteStreamUpgrade, } from "./stream-server.js";
+ import { REMOTE_EVENT_STREAM_ENDPOINT, REMOTE_EVENT_STREAM_READY, REMOTE_EVENT_RESULT_ENDPOINT, REMOTE_STREAM_MUX_PATH, isRemoteEventAgentId, parseRemoteEventResult, projectRemoteEventRequest, restoreRemoteEventRejection, } from "./stream-protocol.js";
+ const NEVER_ABORTED_SIGNAL = new AbortController().signal;
+-const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 2_000;
++/**
++* How long the mux WebSocket may go without answering a ping before it is
++* terminated. The ping is queued behind whatever the server is pushing, so
++* a short interval terminates a socket that is still being filled; see the
++* same constant in `lib/index.js`.
++*/
++const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 15_000;
+ const DEFAULT_STREAM_INBOX_BYTES = 262_144;
+ const EMPTY_ASYNC_ITERABLE = {
+     [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({ value: undefined, done: true }) }),

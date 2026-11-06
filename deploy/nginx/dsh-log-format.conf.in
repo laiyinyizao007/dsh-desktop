@@ -1,0 +1,15 @@
+# The timing log for the DSH site.
+#
+# It is a file of its own so that nginx.conf does not have to be edited: the
+# http-level include already pulls everything in conf.d in.
+#
+# The timestamp is first because it is what makes a diagnosis possible — it
+# lines a WebSocket connection's lifetime up against the requests that
+# followed it. The user agent separates the browser's requests from the
+# probe's and the warm-up script's.
+#
+# $remote_addr is always 127.0.0.1 here: the tunnel connects from this
+# machine. Reconciling with the edge means $http_cf_ray.
+log_format dsh_timing '$time_iso8601 $remote_addr $http_user_agent '
+                      '$request_time $upstream_response_time $upstream_connect_time '
+                      '$upstream_status $bytes_sent $http_cf_ray $request_uri';

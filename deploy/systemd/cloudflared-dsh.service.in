@@ -1,0 +1,19 @@
+[Unit]
+Description=Cloudflare Tunnel for the DSH Desktop web UI
+Documentation=https://github.com/dataelement/dsh-desktop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${USER}
+Group=${GROUP}
+# The tunnel points at the reverse proxy, not at the Harness: the proxy
+# injects the Harness's rotating launch token, so the domain works as a
+# plain bookmarkable URL and survives a Harness restart.
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate --config ${CLOUDFLARED_DIR}/config-dsh.yml tunnel run dsh-desktop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
