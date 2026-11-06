@@ -13,5 +13,14 @@ reports, written to be sent:
 | `dsh-workbench-project-console` | `projectHub-console-narrow.md` + `.patch` | The filter pills lose their text on a narrow panel. A patch is attached. |
 | `dsh-better-sidebar` | `better-sidebar-keyboard-inset.md` | The keyboard inset counts the browser's own bars, so the bottom workbench is lifted by the height of the address bar. An issue rather than a patch: there is no standard way to tell the keyboard's height from the chrome's on iOS, and the fix needs a device to try. |
 
+The Harness itself is adapted in the same way: the proxy in front of it
+fixes the session cookie's `SameSite` on the way out, because the Harness
+issues it `Strict` and that breaks a cross-site arrival — a QR code, a
+chat message, a bookmark in another app.
+
+| Upstream | File | What |
+| --- | --- | --- |
+| `@deepseek-ai/dsh-client-connection` | `session-cookie-same-site-strict.md` | The session cookie is `SameSite=Strict`, so a cross-site arrival never finishes the token exchange and the app never loads. |
+
 The plugin also watches its own adaptations: see "Watching the adaptations"
 in the responsive plugin's README.

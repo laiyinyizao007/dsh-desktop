@@ -330,6 +330,36 @@ behaviours make this non-trivial:
    — a path that ends in `.js`, which is what an edge cache keys on — and
    reverses the rewrite on the way upstream. Without that rewrite the whole
    plugin graph comes back through the tunnel on every page load.
+5. **The session cookie must survive a cross-site arrival.** The Harness
+   issues it with `SameSite=Strict`. That is right for an app reached only
+   from its own links and wrong for one reached the way a phone reaches
+   this: a QR code, a chat message, a bookmark in another app. Every one of
+   those is a cross-site arrival, and a browser withholds a Strict cookie
+   from a cross-site navigation.
+
+   The token exchange is a redirect — the cookie is set by the first
+   response and read by the second — so a withheld cookie means the
+   exchange never finishes. The browser asks for a fresh token, is
+   redirected again, and gives up on *"this page redirected you too many
+   times"*. Nothing loads: no stylesheet, no application, no workbench.
+   What is left on the screen is the bare shell, so it looks like the app
+   failed to start rather than like an authentication problem.
+
+   The proxy therefore rewrites `SameSite=Strict` to `SameSite=Lax` on the
+   way out. Lax still withholds the cookie from a cross-site POST and from
+   any subresource request, so it keeps the protection Strict gives; what
+   it gives up is the cross-site top-level navigation, which is exactly the
+   arrival that has to work.
+
+   `Secure` is added at the same time, because a cookie that may cross
+   sites must not travel over plain HTTP where it can be read off the wire.
+   It cannot be decided from `X-Forwarded-Proto`: the tunnel terminates TLS
+   at the edge and speaks HTTP to nginx, which speaks HTTP to the proxy, so
+   nginx overwrites that header with its own scheme. The edge's own record
+   of the scheme — `CF-Visitor` — is the truth, and a request that came
+   straight in over HTTP carries no such header. The LAN address is served
+   over HTTP, so the flag is added only when the request that came in
+   arrived over HTTPS.
 
 The WebSocket upgrade must be forwarded too. The Harness multiplexes every
 server-push stream over one socket at `/api/remote.mux`; without it the
@@ -442,6 +472,9 @@ something once the app is there.
 
 The notice lives in `scripts/dsh-web-boot-notice.mjs`, and
 `test/web-proxy-boot-notice.test.mjs` covers it.
+
+The cookie rewrite lives in `scripts/dsh-web-session-cookie.mjs`, and
+`test/web-proxy-session-cookie.test.mjs` covers it.
 
 ---
 

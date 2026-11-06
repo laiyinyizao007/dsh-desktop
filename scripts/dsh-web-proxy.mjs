@@ -27,6 +27,7 @@ import { join, dirname } from 'node:path'
 import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
 import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mjs'
 import { injectBootNotice } from './dsh-web-boot-notice.mjs'
+import { clientArrivedOverHttps, relaxSessionCookies } from './dsh-web-session-cookie.mjs'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
 
@@ -1108,6 +1109,17 @@ const server = createServer((clientRequest, clientResponse) => {
     },
     (upstreamResponse) => {
       const responseHeaders = { ...upstreamResponse.headers }
+      // The session cookie is issued with `SameSite=Strict`, which a browser
+      // withholds from a cross-site arrival — and the token exchange is a
+      // redirect, so the cookie is set by one response and read by the next.
+      // Withheld, the exchange never finishes and the browser gives up on
+      // "redirected you too many times". Lax keeps the protection that
+      // matters (no cross-site POST, no subresource) and lets the
+      // navigation that has to work through.
+      const secure = clientArrivedOverHttps(clientRequest.headers)
+      if (responseHeaders['set-cookie'] !== undefined) {
+        responseHeaders['set-cookie'] = relaxSessionCookies(responseHeaders['set-cookie'], secure)
+      }
       // The Harness redirects to a relative path after the token exchange, so
       // the Location header stays usable behind the proxy.
       //
