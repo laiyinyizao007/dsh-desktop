@@ -19,11 +19,11 @@
  * Usage:
  *   node scripts/dsh-web-proxy.mjs [--upstream http://127.0.0.1:43129] [--port 43128]
  */
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, chmodSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { execFileSync } from 'node:child_process'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
 import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mjs'
 
@@ -282,29 +282,130 @@ function storeBundle(revision, body) {
  * The file's mtime and size identify its content, so the parse is repeated
  * only when one of them changes — which is exactly when the token can have
  * changed, including the case where the last line is still being written.
+ *
+ * The token is also tied to the Harness it came from. The Harness rotates
+ * its token on every restart, so the token of a Harness that has been
+ * replaced is dead: injecting it produces a 401 that looks exactly like a
+ * missing token and hides the real cause.
  */
-let tokenCache = { mtimeMs: -1, size: -1, token: undefined }
+let tokenCache = { mtimeMs: -1, size: -1, token: undefined, identity: '' }
+
+/**
+ * The file the captured launch token is kept in.
+ *
+ * The log is the only place the token is written down, and a log rotation
+ * takes it with it. The proxy writes the token here as well, so that a
+ * rotated log does not cost the site its access.
+ */
+const LAUNCH_TOKEN_FILE = process.env.DSH_LAUNCH_TOKEN_FILE ?? '/var/lib/dsh-web/launch-token'
+
+/**
+ * The identity of the running Harness, as a string.
+ *
+ * It is the PID and the process's start time: the PID alone can be reused
+ * by an unrelated process, but the start time of a given PID never goes
+ * backwards. An empty string means the Harness could not be found, in which
+ * case no token can be tied to it.
+ */
+function harnessIdentity() {
+  const pid = harnessPid()
+  if (pid === null) return ''
+  return `${pid}:${harnessStartedAt()}`
+}
+
+/**
+ * The launch token captured from a previous run of this proxy.
+ *
+ * The file holds the Harness's identity as well as the token, and the token
+ * is only used when that identity still matches the running Harness: a token
+ * from a Harness that has been replaced is dead, and a dead token is worse
+ * than no token because it turns a clear "the Harness is not running" into
+ * an unexplained 401.
+ */
+function persistedLaunchToken() {
+  let payload
+  try {
+    payload = JSON.parse(readFileSync(LAUNCH_TOKEN_FILE, 'utf8'))
+  } catch {
+    return undefined
+  }
+  if (typeof payload?.token !== 'string' || payload.token === '') return undefined
+  if (typeof payload.identity === 'string' && payload.identity !== harnessIdentity()) {
+    return undefined
+  }
+  return payload.token
+}
+
+/**
+ * Keep the launch token where the log cannot lose it.
+ *
+ * The file is written to a temporary name and renamed into place, so a
+ * reader never sees a half-written file: this is read on every request and
+ * a truncated file would be read as "no token".
+ */
+function persistLaunchToken(token, identity) {
+  try {
+    mkdirSync(dirname(LAUNCH_TOKEN_FILE), { recursive: true, mode: 0o700 })
+    const temporary = `${LAUNCH_TOKEN_FILE}.tmp`
+    writeFileSync(
+      temporary,
+      `${JSON.stringify({ token, identity, capturedAt: Date.now() })}\n`,
+      { mode: 0o600 }
+    )
+    renameSync(temporary, LAUNCH_TOKEN_FILE)
+    chmodSync(LAUNCH_TOKEN_FILE, 0o600)
+  } catch {
+    // The file is a fallback, not the source of truth: the log still is.
+    return
+  }
+}
 
 function currentLaunchToken() {
+  const identity = harnessIdentity()
+  // A Harness that has been replaced has a different token, so the cached
+  // one cannot be reused even if the log has not changed.
+  const identityChanged =
+    tokenCache.identity !== '' && identity !== '' && tokenCache.identity !== identity
+
   let stats
   try {
     stats = statSync(logPath)
   } catch {
-    return undefined
+    return tokenCache.token ?? persistedLaunchToken()
   }
-  if (stats.mtimeMs === tokenCache.mtimeMs && stats.size === tokenCache.size) {
-    return tokenCache.token
+  if (
+    !identityChanged &&
+    stats.mtimeMs === tokenCache.mtimeMs &&
+    stats.size === tokenCache.size
+  ) {
+    return tokenCache.token ?? persistedLaunchToken()
   }
   let content
   try {
     content = readFileSync(logPath, 'utf8')
   } catch {
-    return undefined
+    return tokenCache.token ?? persistedLaunchToken()
   }
   const matches = [...content.matchAll(/\?token=([A-Za-z0-9_-]+)/g)]
-  const token = matches.at(-1)?.[1]
-  tokenCache = { mtimeMs: stats.mtimeMs, size: stats.size, token }
-  return token
+  const found = matches.at(-1)?.[1]
+  if (found !== undefined) {
+    tokenCache = { mtimeMs: stats.mtimeMs, size: stats.size, token: found, identity }
+    persistLaunchToken(found, identity)
+  } else if (identityChanged) {
+    // The log holds no token and the Harness has been replaced: the cached
+    // token belonged to a Harness that no longer exists.
+    tokenCache = { mtimeMs: stats.mtimeMs, size: stats.size, token: undefined, identity }
+  } else {
+    // The log was truncated and the Harness is the same one: the token it
+    // held is still the right one, so it is kept.
+    tokenCache = {
+      mtimeMs: stats.mtimeMs,
+      size: stats.size,
+      token: tokenCache.token,
+      identity
+    }
+  }
+  return tokenCache.token ?? persistedLaunchToken()
 }
 
 /** The Harness log, or an empty string when it cannot be read. */
@@ -818,6 +919,32 @@ function voltState() {
   return voltStateCache.pending
 }
 
+/**
+ * The read-only endpoints the page polls.
+ *
+ * They are asked for every few seconds by every open page, and they answer
+ * with state that does not change from one second to the next: whether the
+ * Host needs a restart, what the machine's power state is, what the market
+ * offers. Letting an edge cache hold them for a few seconds takes those
+ * requests off the tunnel entirely, and the tunnel is the slow path — a
+ * request that never reaches it is a request nobody waits for.
+ *
+ * They are only worth caching because they are GET requests, and only
+ * because they hold nothing sensitive: a state that names the machine, and
+ * no more. An edge cache ignores cookies, so what they hold is public to
+ * anyone who knows the domain — which is already the case for the site as a
+ * whole.
+ */
+const POLLABLE_PATHS = new Set([
+  '/__volt',
+  '/api/desktop-workbenches/restart-status',
+  '/api/desktop-workbenches/market-installs',
+  '/plugins/dsh-agent-teams/state'
+])
+
+/** How long an edge cache may hold a polled answer. */
+const POLLABLE_CACHE_CONTROL = 'public, max-age=5, stale-while-revalidate=60'
+
 const server = createServer((clientRequest, clientResponse) => {
   const requestUrl = clientRequest.url ?? '/'
 
@@ -867,7 +994,7 @@ const server = createServer((clientRequest, clientResponse) => {
       .then((state) => {
         clientResponse.writeHead(200, {
           'content-type': 'application/json; charset=utf-8',
-          'cache-control': 'no-store'
+          'cache-control': POLLABLE_CACHE_CONTROL
         })
         clientResponse.end(`${JSON.stringify(state)}\n`)
       })
@@ -1004,7 +1131,9 @@ const server = createServer((clientRequest, clientResponse) => {
       // are immutable for the same reason as a revisioned bundle.
       const urlWithQuery = `${target.path}${target.search}`
       const hasRevision = /[?&]rev=/.test(urlWithQuery)
-      if (target.path.startsWith('/plugins/')) {
+      if (clientRequest.method === 'GET' && POLLABLE_PATHS.has(target.path)) {
+        responseHeaders['cache-control'] = POLLABLE_CACHE_CONTROL
+      } else if (target.path.startsWith('/plugins/')) {
         responseHeaders['cache-control'] = hasRevision
           ? 'public, max-age=31536000, immutable'
           : 'no-cache'

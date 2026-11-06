@@ -41,15 +41,34 @@ cd "$REPO_ROOT"
 
 HARNESS_SERVICE="${DSH_HARNESS_SERVICE:-dsh-web.service}"
 PROXY_PORT="${DSH_PROXY_PORT:-43128}"
+# The unit that fills the edge cache with the client bundles. A Harness
+# restart is what invalidates it: the bundles are content-addressed, so a
+# rebuilt bundle has a new revision and therefore a new URL, and the edge has
+# never seen it. Without a warm-up the first person to arrive after an
+# upgrade pulls the whole plugin graph through the tunnel.
+WARM_CACHE_SERVICE="${DSH_WARM_CACHE_SERVICE:-dsh-web-warm-cache.service}"
 # Where the "the Harness is down" counter is kept between ticks. The timer
 # runs a fresh process every 30 seconds, so the state has to live on disk.
 STATE_DIR="${DSH_STATE_DIR:-/var/lib/dsh-watchdog}"
 FAILURE_COUNT_FILE="${STATE_DIR}/harness-down-count"
+# Where the time of the last "the launch token is missing" warning is kept.
+TOKEN_WARNING_FILE="${STATE_DIR}/token-missing-warned-at"
+# How long to wait between two such warnings. The check runs every 30
+# seconds, and the warning is only useful when it is new.
+TOKEN_WARNING_INTERVAL="${DSH_TOKEN_WARNING_INTERVAL:-3600}"
 # How many consecutive failed checks have to add up before the Harness is
 # started again. Two ticks is about a minute.
 FAILURE_THRESHOLD="${DSH_FAILURE_THRESHOLD:-2}"
 
 mkdir -p "$STATE_DIR"
+
+# Fill the edge cache with the client bundles.
+#
+# It runs in the background: the warm-up pulls tens of megabytes through the
+# tunnel, and the watchdog has nothing to do until its next tick.
+warm_the_edge_cache() {
+  sudo systemctl start --no-block "$WARM_CACHE_SERVICE" >/dev/null 2>&1 || true
+}
 
 # Bring the Harness back if it is not running.
 #
@@ -81,6 +100,7 @@ else
 
   echo "starting ${HARNESS_SERVICE}: it was not running for ${count} consecutive checks"
   sudo systemctl start "$HARNESS_SERVICE"
+  warm_the_edge_cache
 
   # Start the Harness before the bundle check below. The bundle check reads
   # the proxy's /healthz, which asks the Harness for its advertised
@@ -113,8 +133,41 @@ for check in report.get("checks", []):
 ' 2>/dev/null || true)"
 
 if [ -z "$stale" ]; then
+  # The Harness is running but has no launch token the proxy can inject, so
+  # every new browser gets a 401 while the browsers that still hold a session
+  # cookie keep working. Restarting the Harness would not help — it would
+  # print a new token, but the log rotation that took the old one away takes
+  # this one away too, and the loop would never end.
+  #
+  # So this only says so, at most once an hour: the fix is to capture the
+  # token again, not to restart anything.
+  missing_token="$(printf '%s' "$body" | python3 -c '
+import json, sys
+
+try:
+    report = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+
+for check in report.get("checks", []):
+    if check["name"] == "harness" and not check["ok"]:
+        print(check.get("detail", ""))
+        break
+' 2>/dev/null || true)"
+  if [ -n "$missing_token" ]; then
+    now="$(date +%s)"
+    last="$(cat "$TOKEN_WARNING_FILE" 2>/dev/null || echo 0)"
+    case "$last" in
+      ''|*[!0-9]*) last=0 ;;
+    esac
+    if [ $((now - last)) -ge "$TOKEN_WARNING_INTERVAL" ]; then
+      printf '%s' "$now" > "$TOKEN_WARNING_FILE"
+      echo "the Harness is running but its launch token is missing (${missing_token}) — new browsers get a 401 until it is captured again"
+    fi
+  fi
   exit 0
 fi
 
 echo "restarting ${HARNESS_SERVICE}: ${stale} changed after it started"
 sudo systemctl restart "$HARNESS_SERVICE"
+warm_the_edge_cache

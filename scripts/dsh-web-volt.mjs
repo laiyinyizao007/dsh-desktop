@@ -202,7 +202,7 @@ export function buildVoltBadge() {
   }
 
   function refresh() {
-    fetch('${VOLT_ENDPOINT}', { cache: 'no-store' })
+    fetch('${VOLT_ENDPOINT}')
       .then(function (response) { return response.ok ? response.json() : null })
       .then(function (state) {
         var described = describe(state)
@@ -232,7 +232,13 @@ export function buildVoltBadge() {
   }
 
   refresh()
-  setInterval(refresh, 5000)
+  // Thirty seconds rather than five.
+  //
+  // What this watches is whether the machine is undervoltage right now, and
+  // a person cannot act on that any faster than they can read it. Polling
+  // it every five seconds meant a request every five seconds for the life
+  // of the page, and this path was the most requested of all.
+  setInterval(refresh, 30000)
   badge.addEventListener('click', function () { badge.style.display = 'none' })
 })()
 </script>`
