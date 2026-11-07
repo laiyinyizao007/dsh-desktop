@@ -3,26 +3,39 @@ import { canGrantWindowPermission } from '../src/main/security-policy'
 
 describe('canGrantWindowPermission', () => {
   it('grants media from the trusted main frame so getUserMedia works in the shell', () => {
+    // `media` is granted for the microphone only, and only when the
+    // request says so: the media types are part of the request, and a
+    // request that names none is a request for the camera.
     expect(
-      canGrantWindowPermission('media', 'http://127.0.0.1:43127/session', true)
+      canGrantWindowPermission('media', 'http://127.0.0.1:43127/session', true, ['audio'])
     ).toBe(true)
     expect(
-      canGrantWindowPermission('media', 'http://localhost:43127/session', true)
+      canGrantWindowPermission('media', 'http://localhost:43127/session', true, ['audio'])
     ).toBe(true)
   })
 
   it('keeps denying media outside the trusted main frame', () => {
-    expect(canGrantWindowPermission('media', 'https://evil.example/session', true)).toBe(
+    expect(canGrantWindowPermission('media', 'https://evil.example/session', true, ['audio'])).toBe(
       false
     )
-    expect(canGrantWindowPermission('media', 'https://127.0.0.1:43127/session', true)).toBe(
+    expect(canGrantWindowPermission('media', 'https://127.0.0.1:43127/session', true, ['audio'])).toBe(
       false
     )
-    expect(canGrantWindowPermission('media', 'file:///tmp/app.html', true)).toBe(false)
-    expect(canGrantWindowPermission('media', 'http://127.0.0.1:43127/session', false)).toBe(
+    expect(canGrantWindowPermission('media', 'file:///tmp/app.html', true, ['audio'])).toBe(false)
+    expect(canGrantWindowPermission('media', 'http://127.0.0.1:43127/session', false, ['audio'])).toBe(
       false
     )
-    expect(canGrantWindowPermission('media', undefined, true)).toBe(false)
+    expect(canGrantWindowPermission('media', undefined, true, ['audio'])).toBe(false)
+  })
+
+  it('keeps the microphone the only media type it grants', () => {
+    // The camera is not what the shell asks for, and a request that mixes
+    // the two is not a request for the microphone alone.
+    for (const types of [[], ['video'], ['audio', 'video'], ['unknown']]) {
+      expect(canGrantWindowPermission('media', 'http://127.0.0.1:43127/session', true, types)).toBe(
+        false
+      )
+    }
   })
 
   it('keeps clipboard and notifications behavior unchanged', () => {
