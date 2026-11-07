@@ -25,5 +25,12 @@ chat message, a bookmark in another app.
 The Harness's repository has issues disabled, so this one goes to
 **Discussions** rather than an issue.
 
+None of them has been sent yet. The GitHub token this machine holds is a
+fine-grained one with read access to those repositories and no write
+access, so a post cannot be made from here without extending it: give it
+"Discussions: read and write" on `deepseek-ai/deepseek-harness` and
+"Issues: read and write" on `omdsh-dev/DSH-better-sidebar`, and the
+reports can go out as they are written.
+
 The plugin also watches its own adaptations: see "Watching the adaptations"
 in the responsive plugin's README.
