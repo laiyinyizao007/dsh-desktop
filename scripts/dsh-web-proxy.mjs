@@ -28,6 +28,16 @@ import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
 import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mjs'
 import { injectBootNotice } from './dsh-web-boot-notice.mjs'
 import { clientArrivedOverHttps, relaxSessionCookies } from './dsh-web-session-cookie.mjs'
+import { bundleCacheName } from './dsh-web-bundle-cache.mjs'
+import {
+  BUNDLE_URL_FORMAT,
+  cacheableBundleUrl,
+  cacheableRequestUrl,
+  chunkRequestUrl,
+  harnessBundleUrl,
+  harnessChunkUrl,
+  isBundlePath
+} from './dsh-web-plugin-url.mjs'
 
 const HARNESS_LOG = process.env.DSH_HARNESS_LOG ?? '/var/log/dsh-web.log'
 
@@ -46,16 +56,6 @@ const args = parseArgs(process.argv.slice(2))
 const logPath = args.log ?? HARNESS_LOG
 const upstream = new URL(args.upstream ?? process.env.DSH_UPSTREAM ?? 'http://127.0.0.1:43129')
 const port = args.port ?? 43128
-
-/**
- * The shape of the plugin-graph URLs this proxy advertises.
- *
- * The number is part of the URL, so changing the shape gives every bundle
- * a new URL — which is what is wanted when the way a bundle is delivered
- * changes: an edge cache that holds an entry for the old shape would
- * otherwise keep serving it.
- */
-const BUNDLE_URL_FORMAT = 2
 
 /**
  * Whether the Session list is trimmed on its way through this proxy.
@@ -232,12 +232,14 @@ function bundleRevision(url) {
  * The re-encoded body of a bundle, if it has been kept.
  *
  * @param revision - the revision the request asks for
+ * @param path - the path of the resource, without its query
  * @returns the Brotli body, or undefined when there is none
  */
-function cachedBundle(revision) {
-  if (revision === undefined || revision === '') return undefined
+function cachedBundle(revision, path) {
+  const name = bundleCacheName(revision, path)
+  if (name === undefined) return undefined
   try {
-    return readFileSync(join(BUNDLE_CACHE_DIR, `${revision}.br`))
+    return readFileSync(join(BUNDLE_CACHE_DIR, name))
   } catch {
     return undefined
   }
@@ -247,13 +249,15 @@ function cachedBundle(revision) {
  * Keep a re-encoded bundle for the next request that asks for it.
  *
  * @param revision - the revision the request asked for
+ * @param path - the path of the resource, without its query
  * @param body - the Brotli body
  */
-function storeBundle(revision, body) {
-  if (revision === undefined || revision === '') return
+function storeBundle(revision, path, body) {
+  const name = bundleCacheName(revision, path)
+  if (name === undefined) return
   try {
     mkdirSync(BUNDLE_CACHE_DIR, { recursive: true, mode: 0o700 })
-    writeFileSync(join(BUNDLE_CACHE_DIR, `${revision}.br`), body)
+    writeFileSync(join(BUNDLE_CACHE_DIR, name), body)
   } catch {
     // A cache that cannot be written is not a failure: the body is still
     // served, it is just re-encoded next time.
@@ -600,79 +604,6 @@ function fetchRootHtml(token) {
 }
 
 /**
- * The plugin-graph URL in the form an edge cache will keep.
- *
- * The Harness advertises its plugin graph as
- * `plugins/??<list of client.js>&rev=<hash>`. The `??` is what makes a URL
- * parser treat the whole list as a query string, so the path a cache sees
- * is only `/plugins/` — no file extension, nothing to key a cache entry on.
- * An edge cache decides what to keep from the path's extension, so these
- * bundles were never cached: every page load pulled the whole plugin graph
- * back through the tunnel, over a link that is several megabits wide.
- *
- * Moving the revision into a real query string leaves a path that ends in
- * `.js`, which is what the cache needs, and the revision still makes the
- * URL change whenever the bytes do. The `proxy` marker names the shape of
- * the URL this proxy produced, so a change to the shape is a different
- * URL and never collides with a cache entry made for the old one.
- *
- * @param value - the URL as it appears in the Harness's HTML
- * @returns the URL with the plugin list in the path
- */
-function cacheableBundleUrl(value) {
-  // The revision is written two ways: as `&amp;rev=` in an HTML attribute,
-  // and as `&rev=` inside the module graph, which lives in a <script> and is
-  // therefore raw text with its entities intact. Both have to be rewritten —
-  // the client reads its bundle URLs from the module graph, so leaving that
-  // one alone would make it fetch every bundle a second time.
-  const pattern = /(plugins)\/\?\?([^"']*?)&(?:amp;)?rev=([^"'&]+)/g
-  return value.replace(pattern, `$1/$2?rev=$3&proxy=${BUNDLE_URL_FORMAT}`)
-}
-
-/**
- * The Harness's own form of a plugin-graph URL.
- *
- * The reverse of `cacheableBundleUrl`: the Harness reads the plugin list
- * from the part after `??`, so a request that arrives in the cacheable
- * form has to be turned back before it is forwarded.
- *
- * @param rawUrl - the request URL as it arrived
- * @returns the URL in the Harness's form, or the original when it is not one
- */
-function harnessBundleUrl(rawUrl) {
-  if (!rawUrl.startsWith('/plugins/')) return rawUrl
-  if (rawUrl.includes('/??')) return rawUrl
-  const questionMark = rawUrl.indexOf('?')
-  if (questionMark < 0) return rawUrl
-  const path = rawUrl.slice(0, questionMark)
-  const search = rawUrl.slice(questionMark + 1)
-  if (!path.endsWith('.js')) return rawUrl
-  // Only the revision is passed on: the Harness derives the revision from
-  // the plugin list, so any extra parameter would make the two disagree
-  // and the bundle would not be found.
-  const revision = /^rev=([^&]*)/.exec(search)?.[1]
-  if (revision === undefined) return rawUrl
-  return `/plugins/??${path.slice('/plugins/'.length)}&rev=${revision}`
-}
-
-/**
- * The cacheable form of a request that still uses the Harness's own URL.
- * The URLs in the module graph are rewritten when the page is served, but a
- * client that loaded an older page — or a URL that was copied out of the
- * log — still asks for the Harness's own form. Sending it on to the
- * Harness would work, but the answer would never be cached, so the request
- * is pointed at the cacheable form instead.
- *
- * @param rawUrl - the request URL as it arrived
- * @returns the URL to redirect to, or undefined when the request is not one
- */
-function cacheableRequestUrl(rawUrl) {
-  const match = /^\/plugins\/\?\?(.+)&rev=([^&]+)/.exec(rawUrl)
-  if (match === null) return undefined
-  return `/plugins/${match[1]}?rev=${match[2]}&proxy=${BUNDLE_URL_FORMAT}`
-}
-
-/**
  * Rewrite the request URL for the upstream.
  *
  * The Harness mints its session cookie only from a root request that carries
@@ -688,7 +619,12 @@ function cacheableRequestUrl(rawUrl) {
  * which would truncate the path to `/plugins/` and 404 the request.
  */
 function rewriteUrl(rawUrl, hasSessionCookie) {
-  const raw = harnessBundleUrl(rawUrl ?? '/')
+  // The proxy's marker is removed before the URL goes upstream. The Harness
+  // reads a chunk's `rev` and ignores the rest — but a URL it cannot parse
+  // is answered with the bundle it has, not with the chunk that was asked
+  // for. The marker exists for the edge cache, which sees the URL before
+  // this point and never sees it again.
+  const raw = harnessChunkUrl(harnessBundleUrl(rawUrl ?? '/'))
   // Split off a real query string, if any. A `??` starts Cordis's plugin
   // list, not a query, so only a single `?` marks one.
   const questionMark = raw.indexOf('?')
@@ -1019,9 +955,14 @@ const server = createServer((clientRequest, clientResponse) => {
   // A bundle that has already been re-encoded is served from disk. The
   // re-encoding costs seconds, and the same revision is asked for again on
   // every cold start — so the second time around it costs a read.
+  //
+  // The cache is keyed on the resource as well as on the revision: a bundle
+  // and its package-local chunks share one revision, and they are different
+  // bodies.
   const revision = bundleRevision(target.path)
+  const resourcePath = target.path.split('?')[0]
   if (wantsBrotli && revision !== undefined) {
-    const cached = cachedBundle(revision)
+    const cached = cachedBundle(revision, resourcePath)
     if (cached !== undefined) {
       clientResponse.writeHead(200, {
         'content-type': 'text/javascript; charset=utf-8',
@@ -1042,6 +983,23 @@ const server = createServer((clientRequest, clientResponse) => {
   if (cacheable !== undefined) {
     clientResponse.writeHead(302, {
       location: cacheable,
+      'cache-control': 'no-store'
+    })
+    clientResponse.end()
+    return
+  }
+
+  // A package-local chunk is pointed at the same shape of URL, for the same
+  // reason: the edge cache keys on the whole URL, so a marker on it gives
+  // the chunk an entry of its own. A chunk without one shares the entry of
+  // whatever was fetched under that URL before — and what was fetched there
+  // was, once, the bundle: the browser then ran the bundle in the chunk's
+  // place, and the module system refused the second registration of the
+  // same factory.
+  const markedChunk = chunkRequestUrl(requestUrl)
+  if (markedChunk !== undefined) {
+    clientResponse.writeHead(302, {
+      location: markedChunk,
       'cache-control': 'no-store'
     })
     clientResponse.end()
@@ -1142,14 +1100,25 @@ const server = createServer((clientRequest, clientResponse) => {
       // same path can serve different bytes after a rebuild), so it stays
       // revalidated. `/assets/*` files carry a build hash in their name and
       // are immutable for the same reason as a revisioned bundle.
+      //
+      // A package-local chunk is a third case. It carries a revision, but
+      // it borrows the one of the bundle it was cut from, and that revision
+      // moves whenever any plugin in that bundle's list changes — even when
+      // the chunk's own bytes have not. Caching it as immutable would keep
+      // a stale chunk for the whole year the edge is told to keep it, and
+      // a stale chunk is a chunk that never loads: the browser runs a
+      // different bundle in its place, and the module system refuses the
+      // duplicate registration. A chunk is therefore revalidated like an
+      // unversioned path, and the edge keeps it for a short while only.
       const urlWithQuery = `${target.path}${target.search}`
       const hasRevision = /[?&]rev=/.test(urlWithQuery)
+      const isBundle = target.path.startsWith('/plugins/') && isBundlePath(target.path)
       if (clientRequest.method === 'GET' && POLLABLE_PATHS.has(target.path)) {
         responseHeaders['cache-control'] = POLLABLE_CACHE_CONTROL
       } else if (target.path.startsWith('/plugins/')) {
-        responseHeaders['cache-control'] = hasRevision
+        responseHeaders['cache-control'] = hasRevision && isBundle
           ? 'public, max-age=31536000, immutable'
-          : 'no-cache'
+          : 'public, max-age=60, must-revalidate'
       } else if (target.path.startsWith('/assets/')) {
         responseHeaders['cache-control'] = 'public, max-age=31536000, immutable'
       } else if (target.path.startsWith('/dsh-desktop-logo')) {
@@ -1195,7 +1164,7 @@ const server = createServer((clientRequest, clientResponse) => {
           delete brotli['transfer-encoding']
           try {
             const body = toBrotli(raw)
-            storeBundle(bundleRevision(target.path), body)
+            storeBundle(bundleRevision(target.path), resourcePath, body)
             brotli['content-encoding'] = 'br'
             brotli['content-length'] = String(body.length)
             brotli['vary'] = 'Accept-Encoding'
