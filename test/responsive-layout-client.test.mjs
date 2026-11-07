@@ -476,6 +476,34 @@ describe('dsh-desktop-responsive client', () => {
     expect(button.getAttribute('aria-label')).toBe('Open sidebar')
   })
 
+  it('keeps the rail\'s own toggle out of the tree while the plugin\'s stands in', async () => {
+    // The rail is clipped to a sliver on a phone and its toggle goes with
+    // it, half off the screen. Both buttons carry the same name, so the
+    // upstream's has to leave the tree while the plugin's stands in.
+    const { toggle } = buildFrame({ width: 390, collapsed: true })
+    await flush()
+    expect(toggle.getAttribute('aria-hidden')).toBe('true')
+    expect(toggle.getAttribute('tabindex')).toBe('-1')
+  })
+
+  it('gives the rail\'s own toggle back when the drawer is open', async () => {
+    // With the drawer open the rail is on the screen, and its toggle is
+    // the visible control again.
+    const { toggle } = buildFrame({ width: 390, collapsed: true })
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    expect(toggle.hasAttribute('aria-hidden')).toBe(false)
+    expect(toggle.hasAttribute('tabindex')).toBe(false)
+  })
+
+  it('leaves the rail\'s own toggle alone on a wide screen', async () => {
+    const { toggle } = buildFrame({ width: 1280 })
+    await flush()
+    expect(toggle.hasAttribute('aria-hidden')).toBe(false)
+    expect(toggle.hasAttribute('tabindex')).toBe(false)
+  })
+
   it('hides the menu button when the rail took no space to begin with', async () => {
     // macOS and a window with a title bar already have a zero-width rail;
     // the platform's own window controls live there.
@@ -1013,13 +1041,18 @@ describe('dsh-desktop-responsive client', () => {
     expect(root.getAttribute('data-dshr-drift')).toContain('project-console')
   })
 
-  it('leaves the composer the same room below it as the header takes above', async () => {
+  it('leaves the composer the room the screen itself takes, not the header', async () => {
     await activatePlugin()
     const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
-    // The header takes its height off the top of the conversation, so the
-    // composer leaves the same room below it — without that it sits on the
-    // bottom edge and its lower half is cut off.
+    // The frame is a grid whose rows fill it, so a padding on the frame
+    // shortens the content area — and the composer, which sticks to the
+    // bottom of that area, stops short of the bottom of the screen. A copy
+    // of the header's height was the wrong thing to leave there: it is the
+    // screen's own safe area that the composer has to keep clear of.
     expect(style.textContent).toMatch(
+      /data-dshr-mode='phone'\] \[data-dsh-region="layout"\][^}]*padding-bottom: env\(safe-area-inset-bottom\)/
+    )
+    expect(style.textContent).not.toMatch(
       /data-dshr-mode='phone'\] \[data-dsh-region="layout"\][^}]*padding-bottom: max\(var\(--dsh-header-height/
     )
   })

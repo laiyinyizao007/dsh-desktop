@@ -1,9 +1,25 @@
+// @vitest-environment node
+//
+// The contract is read out of files — the plugin's source, the upstream's
+// source, the patches — so this test needs the file system and not a DOM.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-const repoRoot = join(import.meta.dirname, '..')
-const clientPath = join(repoRoot, 'packages/dsh-desktop-responsive/client.js')
+const repoRoot = join(import.meta.dirname, '..', 'packages', 'dsh-desktop-responsive')
+const clientPath = join(repoRoot, 'client.js')
+
+/**
+ * Whether the upstream is installed here.
+ *
+ * The upstream is not on a registry — it is built from source — so a
+ * checkout of this plugin on its own may not have it. The tests that read
+ * it are skipped then, rather than failing for want of a file.
+ */
+function upstreamInstalled(pkg) {
+  return existsSync(join(repoRoot, 'node_modules', pkg))
+}
 
 /**
  * The plugin's whole upstream contract is the anchor manifest it exports.
@@ -116,17 +132,8 @@ describe('the anchor manifest', () => {
     }
   })
 
-  it('carries every marker anchor in the patch of its package', async () => {
-    for (const [key, anchor] of Object.entries(anchors)) {
-      if (anchor.origin !== 'marker') continue
-      const marker = markerValue(anchor.selector)
-      expect(marker, `${key} has no marker value`).toBeTruthy()
-      const patch = await readFile(patchFile(anchor.package), 'utf8')
-      expect(patch, `no patch carries ${key}`).toContain(`"${marker}"`)
-    }
-  })
-
-  it('has every anchor present in the installed upstream source', async () => {
+  it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-layout'))(
+    'has every anchor present in the installed upstream source', async () => {
     for (const [key, anchor] of Object.entries(anchors)) {
       if (anchor.optional === true) continue
       const source = await upstreamSource(anchor.package)
@@ -160,6 +167,17 @@ describe('the anchor manifest', () => {
       expect(source, `${anchor.package} does not carry ${key}`).toContain(attribute)
     }
   })
+
+  it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-layout'))(
+    'carries every marker anchor in the patch of its package', async () => {
+      for (const [key, anchor] of Object.entries(anchors)) {
+        if (anchor.origin !== 'marker') continue
+        const marker = markerValue(anchor.selector)
+        expect(marker, `${key} has no marker value`).toBeTruthy()
+        const patch = await readFile(patchFile(anchor.package), 'utf8')
+        expect(patch, `no patch carries ${key}`).toContain(`"${marker}"`)
+      }
+    })
 })
 
 describe('the plugin source', () => {
@@ -248,7 +266,7 @@ describe('the plugin source', () => {
 })
 
 describe("the plugin's own dictionary", () => {
-  it('names the model menu the way upstream names it', async () => {
+  it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-model-selection'))('names the model menu the way upstream names it', async () => {
     // The plugin finds the model menu by the name upstream gives it, so the
     // two dictionaries have to agree. Upstream ships its strings inside its
     // own bundle rather than in a locale file.
@@ -267,7 +285,7 @@ describe("the plugin's own dictionary", () => {
 })
 
 describe('the upstream patches', () => {
-  it('are named after the installed upstream version', async () => {
+  it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-layout'))('are named after the installed upstream version', async () => {
     // patch-package applies a patch whose file name carries another
     // version, but only with a warning. Renaming the file is mechanical,
     // so the drift is caught here instead of in a build log.
