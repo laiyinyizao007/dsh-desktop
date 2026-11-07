@@ -661,7 +661,8 @@ function rewriteUrl(rawUrl, hasSessionCookie) {
   }
 
   return {
-    path: `${path}${search}`,
+    path,
+    search,
     hostname: upstream.hostname,
     port: upstream.port || (upstream.protocol === 'https:' ? 443 : 80),
     protocol: upstream.protocol
@@ -959,8 +960,8 @@ const server = createServer((clientRequest, clientResponse) => {
   // The cache is keyed on the resource as well as on the revision: a bundle
   // and its package-local chunks share one revision, and they are different
   // bodies.
-  const revision = bundleRevision(target.path)
-  const resourcePath = target.path.split('?')[0]
+  const revision = bundleRevision(`${target.path}${target.search}`)
+  const resourcePath = target.path
   if (wantsBrotli && revision !== undefined) {
     const cached = cachedBundle(revision, resourcePath)
     if (cached !== undefined) {
@@ -1061,7 +1062,9 @@ const server = createServer((clientRequest, clientResponse) => {
       protocol: target.protocol,
       hostname: target.hostname,
       port: target.port,
-      path: target.path,
+      // The query travels with the path: the launch token is carried in it
+      // when the request is the root page and there is no session yet.
+      path: `${target.path}${target.search}`,
       method: clientRequest.method,
       headers
     },
@@ -1164,7 +1167,7 @@ const server = createServer((clientRequest, clientResponse) => {
           delete brotli['transfer-encoding']
           try {
             const body = toBrotli(raw)
-            storeBundle(bundleRevision(target.path), resourcePath, body)
+            storeBundle(bundleRevision(`${target.path}${target.search}`), resourcePath, body)
             brotli['content-encoding'] = 'br'
             brotli['content-length'] = String(body.length)
             brotli['vary'] = 'Accept-Encoding'
@@ -1206,6 +1209,14 @@ const server = createServer((clientRequest, clientResponse) => {
             const rewritten = injectBootNotice(injectVoltBadge(cacheableBundleUrl(raw.toString('utf8'))))
             const body = Buffer.from(rewritten, 'utf8')
             page['content-length'] = String(body.length)
+            // The page is different every time: the badge carries the
+            // machine's current power state, the notice says whether the
+            // app is still coming up, and the plugin graph carries the
+            // revision of every bundle. A browser that keeps it would
+            // come back to a page that points at bundles this server no
+            // longer has — and one that says the machine is healthy when
+            // it is not.
+            page['cache-control'] = 'no-store'
             clientResponse.writeHead(upstreamResponse.statusCode ?? 502, page)
             clientResponse.end(body)
           } catch {

@@ -68,13 +68,15 @@ describe('the proxy', () => {
     // The path is what tells a bundle apart from its chunk. A call that
     // leaves it out would read one resource's body for another's request.
     expect(proxySource).toMatch(/cachedBundle\(revision, resourcePath\)/)
-    expect(proxySource).toMatch(/storeBundle\(bundleRevision\(target\.path\), resourcePath, body\)/)
+    expect(proxySource).toMatch(/storeBundle\(bundleRevision\(`\$\{target\.path\}\$\{target\.search\}`\), resourcePath, body\)/)
     expect(proxySource).not.toMatch(/cachedBundle\(revision\)/)
   })
 
   it('keys the cache on the path without its query', () => {
     // The revision is already part of the key, so the query would only
-    // repeat it — and the query carries the parameters the proxy adds.
-    expect(proxySource).toContain("const resourcePath = target.path.split('?')[0]")
+    // repeat it — and the query carries the parameters the proxy adds. The
+    // proxy keeps the query apart from the path for exactly this reason.
+    expect(proxySource).toContain('const resourcePath = target.path')
+    expect(proxySource).not.toContain("const resourcePath = target.path.split('?')[0]")
   })
 })
