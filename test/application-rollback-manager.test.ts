@@ -12,13 +12,29 @@ vi.mock('electron-updater', () => ({ default: { autoUpdater: mocks.updater } }))
 vi.mock('../src/main/desktop-service', () => ({ checkDesktopUpdate: vi.fn() }))
 vi.mock('../src/main/update/version-catalog', async original => ({ ...await original<object>(), fetchAvailableReleases: mocks.catalog }))
 let manager: typeof import('../src/main/update/update-manager')
+/**
+ * The platform the rollback is exercised on.
+ *
+ * An application rollback is only offered on the platforms the installer can
+ * put a previous version back on: macOS and Windows. The test names one of
+ * them rather than the host's own, because the behaviour under test is the
+ * rollback path and not the host's platform — on a Linux development machine
+ * the host's platform has no rollback at all, and every case would stop at
+ * the "unsupported installation" gate before reaching what it asserts.
+ */
+const ROLLBACK_PLATFORM = { platform: 'darwin', arch: 'arm64' }
+/** The real platform, restored when the test is done with it. */
+const realPlatform = process.platform
+const realArch = process.arch
 beforeEach(async () => {
   vi.resetModules()
   vi.clearAllMocks()
   mocks.handlers.clear()
+  Object.defineProperty(process, 'platform', { value: ROLLBACK_PLATFORM.platform, configurable: true })
+  Object.defineProperty(process, 'arch', { value: ROLLBACK_PLATFORM.arch, configurable: true })
   mocks.root = await mkdtemp(join(tmpdir(), 'dsh-rollback-manager-'))
   await new ApplicationRollback(join(mocks.root, 'application-rollback.json'), {
-    version: '0.11.2', platform: process.platform, arch: process.arch, packaged: true
+    version: '0.11.2', ...ROLLBACK_PLATFORM, packaged: true
   }).recordUpgrade('0.13.0')
   mocks.updater.on.mockImplementation((event: string, callback: (info: { version: string }) => void) => mocks.handlers.set(event, callback))
   mocks.catalog.mockResolvedValue([{ version: '0.11.2' }, { version: '0.12.1' }])
@@ -32,7 +48,12 @@ beforeEach(async () => {
   })
   manager = await import('../src/main/update/update-manager')
 })
-afterEach(async () => { manager.stopUpdateManager(); await rm(mocks.root, { recursive: true, force: true }) })
+afterEach(async () => {
+  manager.stopUpdateManager()
+  Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
+  Object.defineProperty(process, 'arch', { value: realArch, configurable: true })
+  await rm(mocks.root, { recursive: true, force: true })
+})
 
 it('keeps recovery downgrade closed without a verified data compatibility policy', async () => {
   manager.startUpdateManager({ prepareToInstall: async () => {} })
