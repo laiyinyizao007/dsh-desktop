@@ -29,6 +29,7 @@ import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mj
 import { injectBootNotice } from './dsh-web-boot-notice.mjs'
 import { clientArrivedOverHttps, relaxSessionCookies } from './dsh-web-session-cookie.mjs'
 import { bundleCacheName } from './dsh-web-bundle-cache.mjs'
+import { currentDigests } from './dsh-web-bundle-digest.mjs'
 import {
   BUNDLE_URL_FORMAT,
   cacheableBundleUrl,
@@ -528,6 +529,21 @@ function repoModules() {
  */
 let rootHtmlCache = { startedAt: -1, token: undefined, html: null }
 
+/**
+ * The content of the client bundles as the running Harness saw them.
+ *
+ * The Harness serves the files that are on disk, and it began serving them
+ * when it started. That is the state a bundle is compared against: a bundle
+ * whose content has moved away from it is one the Harness will not find
+ * again under the revision it advertises.
+ *
+ * The start time is kept with the digests because it is what says they
+ * belong to the same run of the Harness: a restart makes the files on disk
+ * the baseline again, because the new Harness serves them.
+ */
+let baselineStartedAt = -1
+let baselineDigests = new Map()
+
 function rootHtml() {
   const token = currentLaunchToken()
   if (token === undefined) return null
@@ -771,19 +787,38 @@ function diagnose() {
   // module graph then fails with "required client modules failed to
   // activate" — so a bundle whose file changed after the Harness started is
   // the single most common cause of a page that will not mount.
+  //
+  // What is compared is the content of the entry, not its timestamp. A
+  // timestamp says that a file is stale whenever it was written, whether or
+  // not the bytes changed: a checkout of another branch, a `touch`, an
+  // editor saving the same content again. Each of those restarted the
+  // Harness for nothing, and a restart drops the live WebSocket
+  // connections and interrupts the work in flight.
+  //
+  // The baseline is the content as the running Harness saw it. It is taken
+  // when the Harness's start time changes, because that is the moment the
+  // Harness began serving the files that are on disk now.
   const stale = []
   const startedAt = harnessStartedAt()
+  const entries = []
   for (const [id, revision] of advertisedRevisions()) {
     const file = clientEntryPath(id)
-    if (file === null) continue
-    let mtimeMs
-    try {
-      mtimeMs = statSync(file).mtimeMs
-    } catch {
-      continue
-    }
-    if (mtimeMs > startedAt) {
-      stale.push({ id, revision, modified: new Date(mtimeMs).toISOString() })
+    if (file !== null) entries.push([id, file, revision])
+  }
+  const digests = currentDigests(entries.map(([id, file]) => [id, file]))
+  if (baselineStartedAt !== startedAt) {
+    // The Harness has restarted since the last check: it is serving what
+    // is on disk now, and that is the baseline to compare against.
+    baselineStartedAt = startedAt
+    baselineDigests = digests
+  } else {
+    for (const [id, , revision] of entries) {
+      const digest = digests.get(id)
+      if (digest === undefined) continue
+      const known = baselineDigests.get(id)
+      if (known === undefined || known !== digest) {
+        stale.push({ id, revision, modified: new Date().toISOString() })
+      }
     }
   }
   checks.push({
