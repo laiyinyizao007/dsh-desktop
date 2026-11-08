@@ -27,6 +27,7 @@ import { join, dirname } from 'node:path'
 import { gzipSync, brotliCompressSync, gunzipSync, constants } from 'node:zlib'
 import { VOLT_ENDPOINT, injectVoltBadge, readVoltState } from './dsh-web-volt.mjs'
 import { injectBootNotice } from './dsh-web-boot-notice.mjs'
+import { injectNarrowClearance } from './dsh-web-narrow-layout.mjs'
 import { clientArrivedOverHttps, relaxSessionCookies } from './dsh-web-session-cookie.mjs'
 import { bundleCacheName } from './dsh-web-bundle-cache.mjs'
 import {
@@ -1225,7 +1226,13 @@ const server = createServer((clientRequest, clientResponse) => {
             // up, with a retry button — the plugin graph is several
             // megabytes, and a reader on a slow link would otherwise be
             // looking at a white screen with no way to tell.
-            const rewritten = injectBootNotice(injectVoltBadge(cacheableBundleUrl(raw.toString('utf8'))))
+            // The page also keeps the title clear of the rail's toggle on
+            // a narrow screen: until the phone layout has arrived — it
+            // comes with the bundle — upstream's own layout is what the
+            // reader sees, and its title runs under the button.
+            const rewritten = injectNarrowClearance(
+              injectBootNotice(injectVoltBadge(cacheableBundleUrl(raw.toString('utf8'))))
+            )
             const body = Buffer.from(rewritten, 'utf8')
             page['content-length'] = String(body.length)
             // The page is different every time: the badge carries the
