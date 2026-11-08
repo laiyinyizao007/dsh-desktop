@@ -167,29 +167,35 @@ function persist(token, pid, startedAt) {
 
 const deadline = Date.now() + Math.max(0, waitSeconds) * 1000
 let token
+let pid
+let startedAt
+// The log holds the tokens of every Harness that has run: it is appended
+// to, not truncated, so the last token in it belongs to whichever Harness
+// printed most recently — which, right after a restart, is not the one that
+// is running now. The Harness prints its own URL a moment after it binds
+// its port, so the token that this run needs may not be in the log yet.
+//
+// So the token is taken as the newest one the running Harness accepts, and
+// the wait is on that: a token from a replaced Harness is never stored,
+// and the loop keeps looking until the running one has printed its own.
 for (;;) {
-  token = tokenInLog()
-  if (token !== undefined) break
+  const candidate = tokenInLog()
+  if (candidate !== undefined) {
+    if (await harnessAccepts(candidate)) {
+      token = candidate
+      pid = harnessPid()
+      startedAt = processStartedAt(pid)
+      break
+    }
+  }
   if (Date.now() >= deadline) break
-  // The Harness prints its URL a moment after it binds its port.
   await new Promise((resolve) => setTimeout(resolve, 250))
 }
 
 if (token === undefined) {
   console.error(
     `dsh-web-capture-token: no launch token in ${logPath} after ${waitSeconds}s` +
-      (present('--quiet') ? '' : ` — the Harness may not have started`)
-  )
-  process.exit(1)
-}
-
-const pid = harnessPid()
-const startedAt = processStartedAt(pid)
-
-if (!(await harnessAccepts(token))) {
-  console.error(
-    `dsh-web-capture-token: the Harness at ${harnessUrl} does not accept this token — ` +
-      'it belongs to a Harness that has been replaced, so it was not saved'
+      (present('--quiet') ? '' : ' — the Harness may not have started')
   )
   process.exit(1)
 }
