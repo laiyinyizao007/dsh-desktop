@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Keep the DSH Harness running and its client bundles fresh.
+# Keep the DSH Harness running, and say when its client bundles are stale.
 #
 # This runs from a timer, every 30 seconds. It has two jobs:
 #
-#   1. Restart the Harness when a client bundle changed after it started.
+#   1. Say when a client bundle changed after the Harness started.
 #
 #      The Harness derives a client bundle's revision from the entry's mtime,
 #      ctime and size, and recomputes it only on startup or through the HMR
@@ -13,8 +13,13 @@
 #      failed to activate".
 #
 #      This reads the proxy's /healthz answer, which already compares the
-#      advertised revisions against the files on disk, and restarts the Harness
-#      only when that comparison says a bundle is stale.
+#      advertised revisions against the files on disk.
+#
+#      The Harness is not restarted for this. A restart drops the live
+#      WebSocket connections and interrupts whatever the agent is doing,
+#      and editing a plugin is a thing a person does while they are working.
+#      The warning names the bundles that changed and the command to restart
+#      with; the restart is the person's to make, when they are ready for it.
 #
 #   2. Bring the Harness back when it is not running at all.
 #
@@ -53,6 +58,13 @@ STATE_DIR="${DSH_STATE_DIR:-/var/lib/dsh-watchdog}"
 FAILURE_COUNT_FILE="${STATE_DIR}/harness-down-count"
 # Where the time of the last "the launch token is missing" warning is kept.
 TOKEN_WARNING_FILE="${STATE_DIR}/token-missing-warned-at"
+# Where the set of stale bundles last reported is kept.
+#
+# The warning is only useful when it is new: the check runs every 30 seconds,
+# and the same stale bundle stays stale until the Harness is restarted. The
+# set is kept so that a warning is printed when the set changes, and not
+# again for the same one.
+STALE_NOTICE_FILE="${STATE_DIR}/stale-bundles-noticed"
 # How long to wait between two such warnings. The check runs every 30
 # seconds, and the warning is only useful when it is new.
 TOKEN_WARNING_INTERVAL="${DSH_TOKEN_WARNING_INTERVAL:-3600}"
@@ -108,6 +120,7 @@ else
   # the check would answer "every bundle matches" and the page would keep
   # serving a stale revision until the next restart.
   rm -f "$FAILURE_COUNT_FILE"
+  rm -f "$STALE_NOTICE_FILE"
   exit 0
 fi
 
@@ -133,6 +146,11 @@ for check in report.get("checks", []):
 ' 2>/dev/null || true)"
 
 if [ -z "$stale" ]; then
+  # Nothing is stale: the Harness is serving what is on disk. The record of
+  # what was reported is cleared, so that the same bundle reported again
+  # later is reported again.
+  rm -f "$STALE_NOTICE_FILE"
+
   # The Harness is running but has no launch token the proxy can inject, so
   # every new browser gets a 401 while the browsers that still hold a session
   # cookie keep working. Restarting the Harness would not help — it would
@@ -168,6 +186,21 @@ for check in report.get("checks", []):
   exit 0
 fi
 
-echo "restarting ${HARNESS_SERVICE}: ${stale} changed after it started"
-sudo systemctl restart "$HARNESS_SERVICE"
-warm_the_edge_cache
+# A bundle changed after the Harness started.
+#
+# The Harness is not restarted for this. A restart drops the live WebSocket
+# connections and interrupts whatever the agent is doing, and editing a
+# plugin is a thing a person does while they are working — so the restart
+# is theirs to make, when they are ready for it. Until then the browser
+# asks for a revision the Harness no longer has, and the page says so.
+#
+# The warning is printed when the set of stale bundles changes, and not again
+# for the same one: the check runs every 30 seconds, and the same bundle
+# stays stale until the Harness is restarted.
+if [ "$(cat "$STALE_NOTICE_FILE" 2>/dev/null || true)" != "$stale" ]; then
+  printf '%s' "$stale" > "$STALE_NOTICE_FILE"
+  echo "these client bundles changed after the Harness started: ${stale}"
+  echo "  the page will not load until it is restarted:"
+  echo "  sudo systemctl restart ${HARNESS_SERVICE}"
+fi
+exit 0

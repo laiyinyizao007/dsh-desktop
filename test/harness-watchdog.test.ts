@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -95,6 +95,80 @@ exit 0
 }
 
 const counterFile = (stateDir: string) => join(stateDir, 'harness-down-count')
+const staleFile = (stateDir: string) => join(stateDir, 'stale-bundles-noticed')
+
+/**
+ * The /healthz answer of a proxy whose bundles are stale.
+ *
+ * The shape is the proxy's own: a list of checks, and the stale bundles
+ * named by id.
+ */
+const STALE_HEALTHZ = JSON.stringify({
+  ok: false,
+  checks: [
+    { name: 'harness', ok: true, detail: 'launch token present' },
+    { name: 'client-bundle-revisions', ok: false, detail: '1 bundle(s) changed after the Harness started' }
+  ],
+  stale: [{ id: 'dsh-desktop-responsive', rev: 'abc123' }]
+})
+
+/** The same answer with nothing stale. */
+const FRESH_HEALTHZ = JSON.stringify({
+  ok: true,
+  checks: [
+    { name: 'harness', ok: true, detail: 'launch token present' },
+    { name: 'client-bundle-revisions', ok: true, detail: 'every bundle matches its advertised revision' }
+  ],
+  stale: []
+})
+
+/**
+ * Run the watchdog against a proxy that answers /healthz with the given body.
+ *
+ * The proxy is a separate process: the watchdog is run with a synchronous
+ * call, which blocks this process's event loop, and a server in this
+ * process would not answer while it is blocked.
+ */
+async function runWithHealthz(
+  options: { healthz: string; stateDir: string }
+): Promise<RunResult> {
+  const bin = mkdtempSync(join(tmpdir(), 'dsh-watchdog-proxy-'))
+  const serverScript = join(bin, 'proxy.mjs')
+  const portFile = join(bin, 'port')
+  writeFileSync(
+    serverScript,
+    `import { createServer } from 'node:http'
+import { writeFileSync } from 'node:fs'
+const body = ${JSON.stringify(options.healthz)}
+const server = createServer((_request, response) => {
+  response.writeHead(200, { 'content-type': 'application/json' })
+  response.end(body)
+})
+server.listen(0, '127.0.0.1', () => {
+  writeFileSync(${JSON.stringify(portFile)}, String(server.address().port))
+})
+`,
+    { mode: 0o755 }
+  )
+  const server = spawn(process.execPath, [serverScript], { stdio: 'ignore' })
+  try {
+    // Wait for the server to say which port it took.
+    let port = ''
+    for (let attempt = 0; attempt < 100 && port === ''; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      if (existsSync(portFile)) port = readFileSync(portFile, 'utf8')
+    }
+    if (port === '') throw new Error('the fake proxy did not start')
+    return runWatchdog({
+      activeState: 'active',
+      stateDir: options.stateDir,
+      env: { DSH_PROXY_PORT: port }
+    })
+  } finally {
+    server.kill()
+    rmSync(bin, { recursive: true, force: true })
+  }
+}
 
 describe('the Harness watchdog', () => {
   it('does nothing while the Harness is running', () => {
@@ -174,6 +248,60 @@ describe('the Harness watchdog', () => {
       expect(first.exitCode).toBe(0)
       expect(first.stdout).toBe('')
       expect(readFileSync(counterFile(stateDir), 'utf8')).toBe('1')
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+
+  it('says which bundles changed instead of restarting the Harness', async () => {
+    // A restart drops the live WebSocket connections and interrupts whatever
+    // the agent is doing, and editing a plugin is a thing a person does while
+    // they are working — so the restart is theirs to make.
+    const stateDir = mkdtempSync(join(tmpdir(), 'dsh-watchdog-state-'))
+    try {
+      const result = await runWithHealthz({ healthz: STALE_HEALTHZ, stateDir })
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('dsh-desktop-responsive')
+      // The command to run is named, so that the person reading the log does
+      // not have to know it.
+      expect(result.stdout).toContain('sudo systemctl restart dsh-web.service')
+      // The Harness is not restarted for it.
+      expect(result.calls).not.toContain('restart')
+      expect(result.calls).not.toContain('start dsh-web.service')
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+
+  it('says it once for the same set of bundles', async () => {
+    // The check runs every 30 seconds, and a bundle stays stale until the
+    // Harness is restarted. Saying it again would be noise.
+    const stateDir = mkdtempSync(join(tmpdir(), 'dsh-watchdog-state-'))
+    try {
+      const first = await runWithHealthz({ healthz: STALE_HEALTHZ, stateDir })
+      expect(first.stdout).toContain('dsh-desktop-responsive')
+
+      const second = await runWithHealthz({ healthz: STALE_HEALTHZ, stateDir })
+      expect(second.stdout).toBe('')
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true })
+    }
+  })
+
+  it('says it again once the bundles are fresh and stale once more', async () => {
+    // The record of what was reported is cleared when nothing is stale, so
+    // that the same bundle reported later is reported again.
+    const stateDir = mkdtempSync(join(tmpdir(), 'dsh-watchdog-state-'))
+    try {
+      await runWithHealthz({ healthz: STALE_HEALTHZ, stateDir })
+      expect(existsSync(staleFile(stateDir))).toBe(true)
+
+      const fresh = await runWithHealthz({ healthz: FRESH_HEALTHZ, stateDir })
+      expect(fresh.stdout).toBe('')
+      expect(existsSync(staleFile(stateDir))).toBe(false)
+
+      const staleAgain = await runWithHealthz({ healthz: STALE_HEALTHZ, stateDir })
+      expect(staleAgain.stdout).toContain('dsh-desktop-responsive')
     } finally {
       rmSync(stateDir, { recursive: true, force: true })
     }
