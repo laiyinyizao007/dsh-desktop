@@ -30,6 +30,7 @@ import { injectBootNotice } from './dsh-web-boot-notice.mjs'
 import { injectNarrowClearance } from './dsh-web-narrow-layout.mjs'
 import { clientArrivedOverHttps, relaxSessionCookies } from './dsh-web-session-cookie.mjs'
 import { bundleCacheName } from './dsh-web-bundle-cache.mjs'
+import { held, holdAnswer, isHoldable } from './dsh-web-api-cache.mjs'
 import {
   BUNDLE_URL_FORMAT,
   cacheableBundleUrl,
@@ -1077,6 +1078,29 @@ const server = createServer((clientRequest, clientResponse) => {
   if (rewritesHtml) delete headers['accept-encoding']
 
   const forward = target.protocol === 'https:' ? httpsRequest : httpRequest
+  /**
+   * An answer the page asked for more than once in the same moment.
+   *
+   * The page opens by asking the Host for everything it can show, and it
+   * asks for several of those at once: the credentials it may use, the
+   * presets it may offer, the settings it may change. The Host answers one
+   * request at a time, so each of them waits behind the others.
+   *
+   * The answers do not change from one second to the next, so the second
+   * and third ask for one of them are answered from the first ask's
+   * answer. What the page waits for is then one request rather than five,
+   * and the Host sees one as well.
+   */
+  const holdable = isHoldable(clientRequest.method, target.path)
+  const holdKey = holdable ? `${target.path}${target.search}` : null
+  if (holdKey !== null) {
+    const heldNow = held.get(holdKey)
+    if (heldNow !== undefined && heldNow.expiresAt > Date.now() && heldNow.answer !== null) {
+      clientResponse.writeHead(heldNow.answer.status, heldNow.answer.headers)
+      clientResponse.end(heldNow.answer.body)
+      return
+    }
+  }
   const upstreamRequest = forward(
     {
       protocol: target.protocol,
@@ -1288,6 +1312,34 @@ const server = createServer((clientRequest, clientResponse) => {
             clientResponse.writeHead(upstreamResponse.statusCode ?? 502, trimmed)
             clientResponse.end(raw)
           }
+        })
+        clientResponse.on('error', () => {
+          upstreamResponse.destroy()
+        })
+        upstreamResponse.on('error', () => {
+          clientResponse.destroy()
+        })
+        return
+      }
+
+      if (holdKey !== null && upstreamResponse.statusCode === 200) {
+        // A holdable answer is small, and it is held as a whole: the second
+        // ask for it has to be answered with the same bytes the first one
+        // got, and a streamed answer cannot be replayed.
+        const chunks = []
+        upstreamResponse.on('data', (chunk) => chunks.push(chunk))
+        upstreamResponse.on('end', () => {
+          const body = Buffer.concat(chunks)
+          const headers = { ...responseHeaders }
+          delete headers['transfer-encoding']
+          // A held answer is handed to whoever asks next, and that may be
+          // another session. A cookie minted for one session must not
+          // travel with it.
+          delete headers['set-cookie']
+          headers['content-length'] = String(body.length)
+          holdAnswer(holdKey, { status: upstreamResponse.statusCode ?? 200, headers, body })
+          clientResponse.writeHead(upstreamResponse.statusCode ?? 502, headers)
+          clientResponse.end(body)
         })
         clientResponse.on('error', () => {
           upstreamResponse.destroy()
